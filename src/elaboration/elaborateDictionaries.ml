@@ -14,22 +14,59 @@ let rec program p = handle_error List.(fun () ->
   flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
 )
 
+
+
+and print_instance_definition i =
+  Format.printf "Inst : %s " (let TName s = i.instance_class_name in s);
+  Format.printf "%s " (let TName s = i.instance_index in s);
+  Format.printf "(%s) "
+    (String.concat ", " (List.map (
+      fun (ClassPredicate (TName s1, TName s2)) -> s1 ^ " " ^ s2 )
+                           i.instance_typing_context));
+  Format.printf "(%s)@\n"
+    (String.concat ", " (List.map (fun (TName s) -> s) i.instance_parameters))
+
+
+  (* and instance_definition = { *)
+(*   instance_position       : position; *)
+(*   instance_parameters     : tname list; *)
+(*   instance_typing_context : class_predicate list; *)
+(*   instance_class_name     : tname; *)
+(*   instance_index          : tname; *)
+(*   instance_members        : record_binding list; *)
+(* } *)
+
+and class_definition env c =
+  List.iter (fun e -> ignore (lookup_class c.class_position e env))
+    (c.superclasses);
+  bind_class c.class_name c env
+
+and instance_definitions env is =
+  let instance_definition env i =
+    let pos = i.instance_position in
+    ignore (lookup_class pos i.instance_class_name env);
+    ignore (lookup_type_definition pos i.instance_index env);
+    print_instance_definition i
+  in
+  List.iter (instance_definition env) is;
+  env
+
+
+
+
 and block env = function
   | BTypeDefinitions ts ->
     let env = type_definitions env ts in
     ([BTypeDefinitions ts], env)
-
   | BDefinition d ->
     let d, env = value_binding env d in
     ([BDefinition d], env)
-
   | BClassDefinition c ->
-    (** Class definitions are ignored. Student! This is your job! *)
-    ([], env)
-
+    let env = class_definition env c in
+    ([BClassDefinition c], env)
   | BInstanceDefinitions is ->
-    (** Instance definitions are ignored. Student! This is your job! *)
-    ([], env)
+    let env = instance_definitions env is in
+    ([BInstanceDefinitions is], env)
 
 and type_definitions env (TypeDefs (_, tdefs)) =
   let env = List.fold_left env_of_type_definition env tdefs in
@@ -38,7 +75,6 @@ and type_definitions env (TypeDefs (_, tdefs)) =
 and env_of_type_definition env = function
   | (TypeDef (pos, kind, t, _)) as tdef ->
     bind_type t kind tdef env
-
   | (ExternalType (p, ts, t, os)) as tdef ->
     bind_type t (kind_of_arity (List.length ts)) tdef env
 
@@ -404,4 +440,3 @@ and is_value_form = function
     is_value_form t
   | _ ->
     false
-

@@ -1,3 +1,4 @@
+*~
 parser.ml
 lexer.ml
 .depend
@@ -11,3 +12,14 @@ joujou
 *.cmx
 *.cmxs
 *.cmxa
+test/elaboration/good/*.mlsr
+test/elaboration/good/*.mlse
+test/elaboration/good/*.ml
+test/elaboration/good/*.mlr
+
+test/elaboration/bad/*.mlse
+test/elaboration/bad/*.mlsr
+test/elaboration/bad/*.ml
+test/elaboration/bad/*.mlr
+
+src/parsing/pprint-20130324/src/_build/*

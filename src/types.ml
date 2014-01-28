@@ -100,8 +100,7 @@ let rec kind_of_arity = function
 
 let rec equivalent ty1 ty2 =
   match ty1, ty2 with
-    | TyVar (_, t), TyVar (_, t') ->
-      t = t'
+    | TyVar (_, t), TyVar (_, t') -> t = t'
     | TyApp (_, t, tys), TyApp (_, t', tys') ->
       t = t' && List.for_all2 equivalent tys tys'
     | _, _ ->

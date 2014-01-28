@@ -27,6 +27,10 @@ let handle_error f =
       fatal' pos (Printf.sprintf
                    "  Class `%s' is unbound."
                    x)
+    | UnboundMember (pos, TName n1, LName n2) ->
+      fatal' pos (Printf.sprintf
+                   "  The class %s doesn't contain the member `%s' ."
+                  n1 n2)
 
     | UnboundLabel (pos, LName x) ->
       fatal' pos (Printf.sprintf

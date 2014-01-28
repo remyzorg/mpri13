@@ -14,6 +14,9 @@ exception UnboundClass of position * tname
 (** [UnboundLabel] is raised if a label is unbound. *)
 exception UnboundLabel of position * lname
 
+(** [UnboundLabel] is raised if a label is unbound. *)
+exception UnboundMember of position * tname * lname
+
 (** [MultipleLabels] is raised if a label is defined several
     times in a record. *)
 exception MultipleLabels of position * lname

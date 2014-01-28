@@ -9,6 +9,11 @@ open ElaborationEnvironment
 
 let string_of_type ty      = ASTio.(XAST.(to_string pprint_ml_type ty))
 
+(* let rec string_of_type t = *)
+(*   match t with *)
+(*   | TyVar (_, TName tname) -> Format.sprintf "Tyvar %s" tname *)
+(*   | TyApp (_, TName tname, ts) -> *)
+(*       Format.sprintf "TyApp %s (%s)" tname (String.concat ", " (List.map (string_of_type) ts)) *)
 
 let rec program p = handle_error List.(fun () ->
   flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
@@ -18,13 +23,16 @@ let rec program p = handle_error List.(fun () ->
 
 and print_instance_definition i =
   Format.printf "Inst : %s " (let TName s = i.instance_class_name in s);
-  Format.printf "%s " (let TName s = i.instance_index in s);
+  Format.printf "%s " (string_of_type i.instance_index);
   Format.printf "(%s) "
     (String.concat ", " (List.map (
       fun (ClassPredicate (TName s1, TName s2)) -> s1 ^ " " ^ s2 )
                            i.instance_typing_context));
+  Format.printf "(%s) "
+    (String.concat ", " (List.map (
+      fun (TName s) -> s) i.instance_parameters));
   Format.printf "(%s)@\n"
-    (String.concat ", " (List.map (fun (TName s) -> s) i.instance_parameters))
+    (String.concat ", " (List.map (fun (RecordBinding (LName s, _)) -> s) i.instance_members))
 
 
   (* and instance_definition = { *)
@@ -38,17 +46,31 @@ and print_instance_definition i =
 
 and class_definition env c =
   List.iter (fun e -> ignore (lookup_class c.class_position e env))
-    (c.superclasses);
+    c.superclasses;
+  (* TODO : check double superclasse, wf member types etc*) 
   bind_class c.class_name c env
 
 and instance_definitions env is =
+  let check_name_cm lname (_, LName tname, _) = lname = tname in 
+  let instance_members pos c index
+      (RecordBinding (LName imname as lname, expr)) =
+    let (pos, LName cmname, tycm) =
+      try List.find (check_name_cm imname) c.class_members with
+      | Not_found -> raise (UnboundMember (pos, c.class_name, lname))
+    in 
+    let _, tyim = expression env expr in
+    check_equal_types pos tyim
+      (Types.substitute [(c.class_parameter, index)] tycm)
+  in
+
   let instance_definition env i =
     let pos = i.instance_position in
-    ignore (lookup_class pos i.instance_class_name env);
-    ignore (lookup_type_definition pos i.instance_index env);
+    let c = lookup_class pos i.instance_class_name env in
+    let index = i.instance_index in
+    List.iter (instance_members pos c index) i.instance_members;
     print_instance_definition i
-  in
-  List.iter (instance_definition env) is;
+  in 
+  List.iter (instance_definition env) is; Format.printf "@\n";
   env
 
 
@@ -378,8 +400,8 @@ and value_binding env = function
     (BindRecValue (pos, vs), env)
 
   | ExternalValue (pos, ts, ((x, ty) as b), os) ->
-    let env = bind_scheme x ts ty env in
-    (ExternalValue (pos, ts, b, os), env)
+      let env = bind_scheme x ts ty env in
+      (ExternalValue (pos, ts, b, os), env)
 
 and eforall pos ts e =
   match ts, e with

@@ -52,12 +52,12 @@ module Make (GAST : AST.GenericS) = struct
 
   and ml_type' ?generics side parent = function
     | TyApp (_, n, _) as ty ->
-      parens_if (begin match as_symbol n with
-        | Some s ->
-          (priority s < priority parent || (parent = s && bad_assoc s side))
-        | None ->
-          false
-      end) (ml_type ?generics ty)
+      parens (* (begin match as_symbol n with *)
+      (*   | Some s -> *)
+      (*     (priority s < priority parent || (parent = s && bad_assoc s side)) *)
+      (*   | None -> *)
+      (*     false *)
+      (* end) *) (ml_type ?generics ty)
     | ty -> ml_type ?generics ty
 
   and ml_type'' ?generics ty =
@@ -407,12 +407,13 @@ module Make (GAST : AST.GenericS) = struct
 
   and instance_definition id =
     does_not_exist_in_ocaml (fun () ->
-      let instance_index =
-        TyApp (undefined_position, id.instance_index,
-               List.map
-                 (fun t -> TyApp (undefined_position, t, []))
-                 id.instance_parameters
-        )
+      let instance_index = id.instance_index
+        
+        (* TyApp (undefined_position, id.instance_index, *)
+        (*        List.map *)
+        (*          (fun t -> TyApp (undefined_position, t, [])) *)
+        (*          id.instance_parameters *)
+        (* ) *)
       in
       group (
         group (

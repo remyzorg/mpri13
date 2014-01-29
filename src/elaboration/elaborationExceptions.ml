@@ -8,6 +8,7 @@ exception UnboundLabel of position * lname
 exception UnboundMember of position * tname * lname
 exception MultipleLabels of position * lname
 exception AlreadyDefinedClass of position * tname
+exception MultipleSameSuperclass of position
 exception InvalidTypeApplication of position
 exception InvalidDataConstructorApplication of position
 exception PatternsMustBindSameVariables of position

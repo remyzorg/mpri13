@@ -141,7 +141,7 @@ instance_members        = simple_record_expression
             "The type arguments of the instance index must match exactly
              the type parameters of the instance."
         else
-          instance_index
+          i
       | _ ->
         Errors.fatal [$startpos; $endpos] "Invalid instance index."
   in

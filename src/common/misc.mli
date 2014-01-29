@@ -35,6 +35,8 @@ val assocp: ('a -> bool) -> ('a * 'b) list -> 'b
 (** Sets of strings. *)
 module StringSet : Set.S with type elt = string
 
+val exists_doubles : 'a list -> bool
+
 (** Maps over strings. *)
 module StringMap : sig
 

@@ -44,6 +44,13 @@ let rec assocp p = function
 (** Sets of strings. *)
 module StringSet = Set.Make(String)
 
+
+let rec exists_doubles = function
+  | [] -> false
+  | [_] -> false
+  | h::t -> let b = List.mem h t in if b then b else exists_doubles t
+
+
 (** Maps over strings. *)
 module StringMap = struct
 

@@ -14,8 +14,11 @@ exception UnboundClass of position * tname
 (** [UnboundLabel] is raised if a label is unbound. *)
 exception UnboundLabel of position * lname
 
-(** [UnboundLabel] is raised if a label is unbound. *)
+(** [UnboundMember] is raised if a member doesn't exists in the class. *)
 exception UnboundMember of position * tname * lname
+
+(** [MultipleSameSuperclass] is raised if a class has the same superclass twice. *)
+exception MultipleSameSuperclass of position
 
 (** [MultipleLabels] is raised if a label is defined several
     times in a record. *)

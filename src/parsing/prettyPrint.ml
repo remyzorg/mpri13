@@ -407,13 +407,12 @@ module Make (GAST : AST.GenericS) = struct
 
   and instance_definition id =
     does_not_exist_in_ocaml (fun () ->
-      let instance_index = id.instance_index
-        
-        (* TyApp (undefined_position, id.instance_index, *)
-        (*        List.map *)
-        (*          (fun t -> TyApp (undefined_position, t, [])) *)
-        (*          id.instance_parameters *)
-        (* ) *)
+      let instance_index =
+        TyApp (undefined_position, id.instance_index,
+               List.map
+                 (fun t -> TyApp (undefined_position, t, []))
+                 id.instance_parameters
+        )
       in
       group (
         group (

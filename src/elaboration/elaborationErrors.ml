@@ -37,6 +37,9 @@ let handle_error f =
                    "  Label `%s' is unbound."
                    x)
 
+    | MultipleSameSuperclass pos ->
+      fatal' pos "  A superclass must not appear more than once."
+
     | OverlappingInstances (pos, TName k) ->
       fatal' pos (Printf.sprintf
                    "  This instance of class `%s' overlaps with another one."

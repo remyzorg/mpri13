@@ -42,6 +42,11 @@ val bind_type : tname -> Types.kind -> type_definition -> t -> t
 (** [bind_type_variable x e] introduces the type variable [x] in [e]. *)
 val bind_type_variable : tname -> t -> t
 
+
+val bind_instance : t -> XAST.instance_definition -> t
+val lookup_instance : Positions.position -> Name.tname * Name.tname -> t
+  -> XAST.instance_definition
+
 (** [lookup_class pos c e] returns the class_definition of [c] in [e]. *)
 val lookup_class : position -> tname -> t -> class_definition
 
@@ -60,4 +65,3 @@ val bind_label : position -> lname -> tnames -> Types.t -> tname -> t -> t
 (** [lookup_label pos l e] returns the type parameters, the type and
     the record type constructor of the label [l] in [e]. *)
 val lookup_label : position -> lname -> t -> tnames * Types.t * tname
-

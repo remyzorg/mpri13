@@ -9,6 +9,48 @@ let handle_error f =
   try
     f ()
   with
+
+
+    | UnboundClass (pos, TName x) ->
+      fatal' pos (Printf.sprintf
+                   "  Class `%s' is unbound."
+                   x)
+
+    | UnboundMember (pos, TName n1, LName n2) ->
+      fatal' pos (Printf.sprintf
+                   "  The class %s doesn't contain the member `%s' ."
+                  n1 n2)
+
+    | AlreadyDefinedAsSuperclass pos ->
+      fatal' pos "  A superclass must not appear more than once."
+
+    | AlreadyDefinedMember pos ->
+      fatal' pos "  A member must not appear more than once."
+
+    | AlreadyDefinedClass (pos, TName x) ->
+      fatal' pos (Printf.sprintf
+                   "  Class `%s' is already defined."
+                   x)
+
+    | MemberNotImplemented (pos, LName x) ->
+      fatal' pos (Printf.sprintf
+                   "  Missing implementation of member %s."
+                   x)
+
+    | UnboundInstance (pos, (TName c, TName index)) ->
+      fatal' pos (Printf.sprintf
+                   "  The instance %s %s doesn't exist."
+                   c index)
+
+    | AlreadyDefinedInstance (pos, (TName c, TName index)) ->
+      fatal' pos (Printf.sprintf
+                   "  The instance %s %s already exists."
+                   c index)
+
+
+
+
+
     | CannotElaborateDictionary (pos, ty) ->
       fatal' pos (Printf.sprintf "  Cannot elaborate a dictionary of type %s."
                    (string_of_type ty))
@@ -23,32 +65,15 @@ let handle_error f =
                    "  Type `%s' is unbound."
                    x)
 
-    | UnboundClass (pos, TName x) ->
-      fatal' pos (Printf.sprintf
-                   "  Class `%s' is unbound."
-                   x)
-    | UnboundMember (pos, TName n1, LName n2) ->
-      fatal' pos (Printf.sprintf
-                   "  The class %s doesn't contain the member `%s' ."
-                  n1 n2)
-
     | UnboundLabel (pos, LName x) ->
       fatal' pos (Printf.sprintf
                    "  Label `%s' is unbound."
                    x)
 
-    | MultipleSameSuperclass pos ->
-      fatal' pos "  A superclass must not appear more than once."
-
     | OverlappingInstances (pos, TName k) ->
       fatal' pos (Printf.sprintf
                    "  This instance of class `%s' overlaps with another one."
                    k)
-
-    | AlreadyDefinedClass (pos, TName x) ->
-      fatal' pos (Printf.sprintf
-                   "  Class `%s' is already defined."
-                   x)
 
     | NonLinearPattern pos ->
       fatal' pos "  This pattern is not linear."

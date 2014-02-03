@@ -2,30 +2,49 @@
 open Positions
 open Name
 
+
+
+(** [UnboundMember] is raised if a member doesn't exists in the class. *)
+exception UnboundMember of position * tname * lname
+
+(** [AlreadyDefinedAsSuperclass] is raised if a class has the same superclass twice. *)
+exception AlreadyDefinedAsSuperclass of position
+
+(** [AlreadyDefinedMember] is raised if a class redefined a member. *)
+exception AlreadyDefinedMember of position
+
+(** [UnboundClass] is raised if a class identifier is unbound. *)
+exception UnboundClass of position * tname
+
+(** [AlreadyDefinedClass] is raised if a class is defined twice. *)
+exception AlreadyDefinedClass of position * tname
+
+(** [MemberNotImplemented] is raised if a member is not implemented in an instance. *)
+exception MemberNotImplemented of position * lname
+
+
+(** [UnboundInstance] is raised if an instance doesn't exist. *)
+exception UnboundInstance of position * (tname * tname)
+
+
+(** [AlreadyDefinedInstance] is raised if an instance is defined twice. *)
+exception AlreadyDefinedInstance of position * (tname * tname)
+
+
+
+
 (** [UnboundIdentifier] is raised if an identifier is unbound. *)
 exception UnboundIdentifier of position * name
 
 (** [UnboundTypeVariable] is raised if a type identifier is unbound. *)
 exception UnboundTypeVariable of position * tname
 
-(** [UnboundClass] is raised if a class identifier is unbound. *)
-exception UnboundClass of position * tname
-
 (** [UnboundLabel] is raised if a label is unbound. *)
 exception UnboundLabel of position * lname
-
-(** [UnboundMember] is raised if a member doesn't exists in the class. *)
-exception UnboundMember of position * tname * lname
-
-(** [MultipleSameSuperclass] is raised if a class has the same superclass twice. *)
-exception MultipleSameSuperclass of position
 
 (** [MultipleLabels] is raised if a label is defined several
     times in a record. *)
 exception MultipleLabels of position * lname
-
-(** [AlreadyDefinedClass] is raised if a class is defined twice. *)
-exception AlreadyDefinedClass of position * tname
 
 (** [InvalidTypeApplication] is raised if an incorrect number of
     types is applied to a polymorphic term. *)

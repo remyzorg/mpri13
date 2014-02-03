@@ -45,10 +45,10 @@ let rec assocp p = function
 module StringSet = Set.Make(String)
 
 
-let rec exists_doubles = function
+let rec forall_tail f = function
   | [] -> false
   | [_] -> false
-  | h::t -> let b = List.mem h t in if b then b else exists_doubles t
+  | h::t -> let b = f h t in if b then b else forall_tail f t
 
 
 (** Maps over strings. *)

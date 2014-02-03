@@ -9,60 +9,101 @@ open ElaborationEnvironment
 
 let string_of_type ty      = ASTio.(XAST.(to_string pprint_ml_type ty))
 
-(* let rec string_of_type t = *)
-(*   match t with *)
-(*   | TyVar (_, TName tname) -> Format.sprintf "Tyvar %s" tname *)
-(*   | TyApp (_, TName tname, ts) -> *)
-(*       Format.sprintf "TyApp %s (%s)" tname (String.concat ", " (List.map (string_of_type) ts)) *)
+let rec string_of_type t =
+  match t with
+  | TyVar (_, TName tname) -> Format.sprintf "Tyvar %s" tname
+  | TyApp (_, TName tname, ts) ->
+      Format.sprintf "TyApp %s (%s)" tname (String.concat ", " (List.map (string_of_type) ts))
 
-(* and print_instance_definition i = *)
-(*   Format.printf "Inst : %s " (let TName s = i.instance_class_name in s); *)
-(*   Format.printf "%s " (let TName s =  i.instance_index in s); *)
-(*   Format.printf "(%s) " *)
-(*     (String.concat ", " (List.map ( *)
-(*       fun (ClassPredicate (TName s1, TName s2)) -> s1 ^ " " ^ s2 ) *)
-(*                            i.instance_typing_context)); *)
-(*   Format.printf "(%s) " *)
-(*     (String.concat ", " (List.map ( *)
-(*       fun (TName s) -> s) i.instance_parameters)); *)
-(*   Format.printf "(%s)@\n" *)
-(*     (String.concat ", " (List.map (fun (RecordBinding (LName s, _)) -> s) i.instance_members)) *)
+and print_instance_definition i =
+  Format.printf "Inst : %s " (let TName s = i.instance_class_name in s);
+  Format.printf "%s " (let TName s =  i.instance_index in s);
+  Format.printf "(%s) "
+    (String.concat ", " (List.map (
+      fun (ClassPredicate (TName s1, TName s2)) -> s1 ^ " " ^ s2 )
+                           i.instance_typing_context));
+  Format.printf "(%s) "
+    (String.concat ", " (List.map (
+      fun (TName s) -> s) i.instance_parameters));
+  Format.printf "(%s)@\n"
+    (String.concat ", " (List.map (fun (RecordBinding (LName s, _)) -> s) i.instance_members))
+
+
+and print_class_definition c =
+  Format.printf "%s %s (%s) \n@\n"
+    (let TName s = c.class_name in s)
+    (let TName s = c.class_parameter in s)
+    (String.concat ", " (List.map (fun (_, LName s, t) ->
+      s ^ ":" ^ (string_of_type t)) c.class_members))
+
+
 
 let rec program p = handle_error List.(fun () ->
   flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
 )
 
 
-and class_definition env c =
+and check_class_definition env c =
+  print_class_definition c;
   let pos = c.class_position in
+  (* check existence of superclasses *)
   List.iter (fun e -> ignore (lookup_class pos e env)) c.superclasses;
-  if Misc.exists_doubles c.superclasses then raise (MultipleSameSuperclass pos);
-  List.iter (
-    fun (pos, LName name, ty) -> check_wf_scheme env [c.class_parameter] ty
-  ) c.class_members;
-  bind_class c.class_name c env
+  (* check double in superclass*)
+  if Misc.forall_tail List.mem c.superclasses then raise (AlreadyDefinedAsSuperclass pos);
+  let double_members =
+    Misc.forall_tail (fun (_, name1, _) t ->
+      List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
+  in
+  if double_members then raise (AlreadyDefinedMember pos);
+  (List.fold_left (fun acc (pos, LName name, ty) ->
+    check_wf_scheme env [c.class_parameter] ty; bind_label acc
+  ) env c.class_members) |> bind_class c.class_name c
 
-and instance_definitions env is =
-  let check_name_cm lname (_, LName tname, _) = lname = tname in
-  let instance_members pos c i params (RecordBinding (LName imname as lname, expr)) =
-    let pos, LName cmname, tycm =
-      try List.find (check_name_cm imname) c.class_members with
-      | Not_found -> raise (UnboundMember (pos, c.class_name, lname))
-    in
+
+and check_instance_definitions env is =
+  let check_name_cm lname (_, LName lname, _) = lname = lname in
+
+  let instance_member pos env c
+      i params (RecordBinding (LName imname as lname, expr)) =
+    let pos = i.instance_position in
+    (* add instance parameters to the environnement *)
     let loc_env = introduce_type_parameters env i.instance_parameters in
-    let _, tyim = expression env expr in
+    let _, tyim = expression loc_env expr in
+    Format.printf "Before error : %s @\n" imname;
     let (ts, subt, _) = lookup_label pos lname loc_env in
+    Format.printf "After error : @\n" ;
+    (* substitute the class parameter by the
+       instance index in the class member type *)
     let tycm =
       substitute (List.combine ts [TyApp (pos, i.instance_index, params)]) subt
     in check_equal_types pos tyim tycm
   in
+
   let instance_definition env i =
+    print_instance_definition i;
     let pos = i.instance_position in
     let c = lookup_class pos i.instance_class_name env in
     let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
     if i.instance_index = TName "->" then raise (IllKindedType pos);
-    List.iter (instance_members pos c i params) i.instance_members
+
+    (* check if members are properly implemented*)
+    List.iter (fun (_, namei, _) ->
+      List.iter (fun (RecordBinding (namem, _)) ->
+        if namei <> namem then raise (MemberNotImplemented (pos, namei))
+      ) i.instance_members
+    ) c.class_members;
+
+    let env = List.fold_left (fun acc (RecordBinding (LName s, _)) ->
+      try bind_scheme (Name s) [c.class_parameter]  (
+        let _, _, t = List.find (check_name_cm s) c.class_members in t)
+            acc
+      with Not_found -> raise (UnboundMember (pos, c.class_name, LName s))
+    ) env i.instance_members in
+
+    List.iter (instance_member pos env c i params) i.instance_members
   in
+
+  let env = List.fold_left bind_instance env is in
   List.iter (instance_definition env) is; Format.printf "@\n";
   env
 
@@ -75,10 +116,10 @@ and block env = function
     let d, env = value_binding env d in
     ([BDefinition d], env)
   | BClassDefinition c ->
-    let env = class_definition env c in
+    let env = check_class_definition env c in
     ([BClassDefinition c], env)
   | BInstanceDefinitions is ->
-    let env = instance_definitions env is in
+    let env = check_instance_definitions env is in
     ([BInstanceDefinitions is], env)
 
 and type_definitions env (TypeDefs (_, tdefs)) =

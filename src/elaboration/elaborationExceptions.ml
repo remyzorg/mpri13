@@ -3,12 +3,8 @@ open Name
 
 exception UnboundIdentifier of position * name
 exception UnboundTypeVariable of position * tname
-exception UnboundClass of position * tname
 exception UnboundLabel of position * lname
-exception UnboundMember of position * tname * lname
 exception MultipleLabels of position * lname
-exception AlreadyDefinedClass of position * tname
-exception MultipleSameSuperclass of position
 exception InvalidTypeApplication of position
 exception InvalidDataConstructorApplication of position
 exception PatternsMustBindSameVariables of position
@@ -32,3 +28,12 @@ exception LabelAlreadyTaken of position * lname
 exception LabelDoesNotBelong of position * lname * tname * tname
 exception InvalidRecordInstantiation of position
 exception OverloadedSymbolCannotBeBound of Positions.position * name
+
+exception AlreadyDefinedClass of position * tname
+exception AlreadyDefinedAsSuperclass of position
+exception UnboundClass of position * tname
+exception UnboundInstance of position * (tname * tname)
+exception AlreadyDefinedInstance of position * (tname * tname)
+exception AlreadyDefinedMember of position
+exception UnboundMember of position * tname * lname
+exception MemberNotImplemented of position * lname

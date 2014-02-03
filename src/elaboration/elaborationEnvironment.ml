@@ -9,9 +9,10 @@ type t = {
   types        : (tname * (Types.kind * type_definition)) list;
   classes      : (tname * class_definition) list;
   labels       : (lname * (tnames * Types.t * tname)) list;
+  instances    : ((tname * tname) * instance_definition) list;
 }
 
-let empty = { values = []; types = []; classes = []; labels = [] }
+let empty = { values = []; types = []; classes = []; labels = []; instances = [] }
 
 let values env = env.values
 
@@ -45,6 +46,21 @@ let lookup_class pos k env =
   try
     List.assoc k env.classes
   with Not_found -> raise (UnboundClass (pos, k))
+
+
+let lookup_instance pos (cname, index) env =
+  try List.assoc (cname, index) env.instances
+  with Not_found -> raise (UnboundInstance (pos, (cname, index)))
+
+let bind_instance env i =
+  let pos, cname, index =i.instance_position,
+    i.instance_class_name, i.instance_index in
+  try
+    ignore (lookup_instance pos (cname, index) env);
+    raise (AlreadyDefinedInstance (pos, (cname, index)))
+  with UnboundInstance _ ->
+    { env with instances = ((cname, index), i) :: env.instances }
+
 
 let bind_class k c env =
   try

@@ -2,6 +2,9 @@ open Name
 open Positions
 open Types
 
+
+
+
 module Make (P : Types.TypingSyntax) = struct
 
   include P

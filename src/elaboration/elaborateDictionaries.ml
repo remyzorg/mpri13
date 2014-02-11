@@ -9,42 +9,25 @@ open ElaborationEnvironment
 
 let string_of_type ty      = ASTio.(XAST.(to_string pprint_ml_type ty))
 
-let rec string_of_type t =
-  match t with
-  | TyVar (_, TName tname) -> Format.sprintf "Tyvar %s" tname
-  | TyApp (_, TName tname, ts) ->
-      Format.sprintf "TyApp %s (%s)" tname (String.concat ", " (List.map (string_of_type) ts))
-
-and print_instance_definition i =
-  Format.printf "Inst : %s " (let TName s = i.instance_class_name in s);
-  Format.printf "%s " (let TName s =  i.instance_index in s);
-  Format.printf "(%s) "
-    (String.concat ", " (List.map (
-      fun (ClassPredicate (TName s1, TName s2)) -> s1 ^ " " ^ s2 )
-                           i.instance_typing_context));
-  Format.printf "(%s) "
-    (String.concat ", " (List.map (
-      fun (TName s) -> s) i.instance_parameters));
-  Format.printf "(%s)@\n"
-    (String.concat ", " (List.map (fun (RecordBinding (LName s, _)) -> s) i.instance_members))
-
-
-and print_class_definition c =
-  Format.printf "%s %s (%s) \n@\n"
-    (let TName s = c.class_name in s)
-    (let TName s = c.class_parameter in s)
-    (String.concat ", " (List.map (fun (_, LName s, t) ->
-      s ^ ":" ^ (string_of_type t)) c.class_members))
-
-
 
 let rec program p = handle_error List.(fun () ->
-  flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
-)
+    flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
+  )
 
 
+and value_of_member c (pos, (LName name), ty) =
+  let param = LName ((namet c.class_name) ^ (namet c.class_parameter)) in
+    ValueDef (pos, [c.class_parameter], [], (Name name, ty),
+              (ERecordAccess (pos, EVar (pos, Name name, []), param)))
+
+and value_binding_of_members pos c = 
+  let mem_values = List.map (value_of_member c) c.class_members in
+  (BindValue (pos, mem_values))
+    
+    (* | ValueDef of position * tnames * class_predicates * binding * expression *)
+    
 and check_class_definition env c =
-  print_class_definition c;
+  (* Debug.print_class_definition c; *)
   let pos = c.class_position in
   (* check existence of superclasses *)
   List.iter (fun e -> ignore (lookup_class pos e env)) c.superclasses;
@@ -55,9 +38,16 @@ and check_class_definition env c =
       List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
   in
   if double_members then raise (AlreadyDefinedMember pos);
-  (List.fold_left (fun acc (pos, LName name, ty) ->
-    check_wf_scheme env [c.class_parameter] ty; bind_label acc
+  let env = (List.fold_left (fun acc (pos, (LName name as lname), ty) ->
+    check_wf_scheme env [c.class_parameter] ty;
+    bind_label pos lname [c.class_parameter] ty c.class_name acc
   ) env c.class_members) |> bind_class c.class_name c
+  in
+  let v, env = value_binding env (value_binding_of_members pos c) in
+  env
+    
+  
+      
 
 
 and check_instance_definitions env is =
@@ -66,12 +56,12 @@ and check_instance_definitions env is =
   let instance_member pos env c
       i params (RecordBinding (LName imname as lname, expr)) =
     let pos = i.instance_position in
+
     (* add instance parameters to the environnement *)
     let loc_env = introduce_type_parameters env i.instance_parameters in
     let _, tyim = expression loc_env expr in
-    Format.printf "Before error : %s @\n" imname;
     let (ts, subt, _) = lookup_label pos lname loc_env in
-    Format.printf "After error : @\n" ;
+
     (* substitute the class parameter by the
        instance index in the class member type *)
     let tycm =
@@ -80,7 +70,7 @@ and check_instance_definitions env is =
   in
 
   let instance_definition env i =
-    print_instance_definition i;
+    (* Debug.print_instance_definition i; *)
     let pos = i.instance_position in
     let c = lookup_class pos i.instance_class_name env in
     let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
@@ -106,13 +96,14 @@ and check_instance_definitions env is =
   let env = List.fold_left bind_instance env is in
   List.iter (instance_definition env) is; Format.printf "@\n";
   env
-
+    
 
 and block env = function
   | BTypeDefinitions ts ->
     let env = type_definitions env ts in
     ([BTypeDefinitions ts], env)
   | BDefinition d ->
+      Debug.print_value_bindings Format.std_formatter d;
     let d, env = value_binding env d in
     ([BDefinition d], env)
   | BClassDefinition c ->

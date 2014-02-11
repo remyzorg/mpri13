@@ -10,6 +10,13 @@ let external (equal_int : int -> int -> boolean) = "fun x y -> x = y"
 let external (equal_char : char -> char -> boolean) = "fun x y -> x = y"
 let external (lt_int : int -> int -> boolean) = "fun x y -> x < y"
 
+
+type test_record = {
+  a : int;
+  b : int
+}
+
+  
 class Eq 'a { equal : 'a -> 'a -> boolean }
 
 instance Eq int { equal = equal_int[] }
@@ -36,6 +43,9 @@ class Eq 'a => Ord 'a {
 instance Ord int {
   lt = lt_int[]
 }
+
+
+let (v : int) = 6
 
 instance ['a] Ord 'a => Ord 'a list {
   lt = fun (l1 : 'a list) -> fun (l2 : 'a list) ->

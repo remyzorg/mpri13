@@ -32,6 +32,7 @@ MODULES =					\
   inference/constraintGeneration		\
   inference/inferenceErrors			\
   inference/inferTypes				\
+  elaboration/debug                             \
   elaboration/elaborationExceptions		\
   elaboration/elaborationErrors 		\
   elaboration/elaborationEnvironment 		\

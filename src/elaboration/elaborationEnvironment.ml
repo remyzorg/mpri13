@@ -53,7 +53,7 @@ let lookup_instance pos (cname, index) env =
   with Not_found -> raise (UnboundInstance (pos, (cname, index)))
 
 let bind_instance env i =
-  let pos, cname, index =i.instance_position,
+  let pos, cname, index = i.instance_position,
     i.instance_class_name, i.instance_index in
   try
     ignore (lookup_instance pos (cname, index) env);

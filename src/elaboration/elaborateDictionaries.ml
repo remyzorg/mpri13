@@ -15,7 +15,7 @@ let rec program p = handle_error List.(fun () ->
   )
 
 and tn_of_class tname = TName ((namet tname) ^ "Class")
-  
+
 and value_of_member c (pos, (LName name as lname), ty) =
   let param = Name ((namet c.class_name) ^ "Inst") in
   let ty_with_param = TyApp (
@@ -32,13 +32,12 @@ and record_of_class c =
   let dty = DRecordType ([c.class_parameter], c.class_members) in
   TypeDef (c.class_position, kind_of_arity 1, tn_of_class c.class_name, dty)
 
-      
-and value_binding_of_members pos c = 
+
+and value_binding_of_members pos c =
   let mem_values = List.map (value_of_member c) c.class_members in
   (BindValue (pos, mem_values))
-    
-    (* | ValueDef of position * tnames * class_predicates * binding * expression *)
-    
+
+
 and check_class_definition env c =
   (* Debug.print_class_definition c; *)
   let pos = c.class_position in
@@ -60,30 +59,36 @@ and check_class_definition env c =
   value_binding env v
 
 
-and record_of_instance i =
+and record_of_instance env i =
   let pos = i.instance_position in
   let tname = tn_of_class i.instance_class_name in
   let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
   let ty_inst = TyApp (pos, i.instance_index, params) in
   let ty = TyApp (pos, tname, [ty_inst]) in
-  let name = Name ((namet i.instance_class_name) ^ (namet i.instance_index)) in 
+  let name = Name ((namet i.instance_class_name) ^ (namet i.instance_index)) in
+  Format.printf " Omg ? : %a" Debug.print_instance_definition i;
+  Format.printf " SOLUTION for %s? => '%s' @\n" (namen name) (
+    String.concat ", " (List.map namet i.instance_parameters));
   ValueDef (
     pos, [], [], (name, ty),
-    ERecordCon (pos, Name (namet tname), [], i.instance_members))
-  
+    ERecordCon (pos, name, params, i.instance_members))
+
+(* Prendre l'expression et remplacer le type paramétré par le type voulu *)
+
+
+
 
 
 and check_instance_definitions env is =
   let check_name_cm lname (_, LName lname, _) = lname = lname in
-
   let instance_member pos env c
       i params (RecordBinding (LName imname as lname, expr)) =
     let pos = i.instance_position in
 
     (* add instance parameters to the environnement *)
-    let loc_env = introduce_type_parameters env i.instance_parameters in
-    let _, tyim = expression loc_env expr in
-    let (ts, subt, _) = lookup_label pos lname loc_env in
+    let local_env = introduce_type_parameters env i.instance_parameters in
+    let _, tyim = expression local_env expr in
+    let (ts, subt, _) = lookup_label pos lname local_env in
 
     (* substitute the class parameter by the
        instance index in the class member type *)
@@ -118,13 +123,13 @@ and check_instance_definitions env is =
 
   let env = List.fold_left bind_instance env is in
   List.iter (instance_definition env) is; Format.printf "@\n";
-  match is with [] -> assert false | i::_ -> 
+  match is with [] -> assert false | i::_ ->
   let bvs = BindValue
-    (i.instance_position, List.map (fun i -> record_of_instance i) is)
+    (i.instance_position, List.map (record_of_instance env) is)
   in
   Format.printf "%a" Debug.print_value_bindings bvs;
   value_binding env bvs
-    
+
 
 and block env = function
   | BTypeDefinitions ts ->
@@ -320,8 +325,6 @@ and expression env = function
     assert false
 
   | ERecordCon (pos, n, i, rbs) ->
-      Format.printf "HERE : ";
-      Format.printf "<%s>@\n" (String.concat ", " (List.map Debug.string_of_type i));
     let rbstys = List.map (record_binding env) rbs in
     let rec check others rty = function
       | [] ->
@@ -336,9 +339,32 @@ and expression env = function
             | None ->
               let rty = TyApp (pos, rtcon, i) in
               let s =
+
+(* PROBLEM : on va chercher dans les label et on tombe sur un equal qui a besoin d'un paramètre : C'est celui de la class Eq. Or dans le Eqint n'a pas de type param :
+
+   Solutions :
+
+   * Choisir le bon environnement local ?
+
+   * Simplement virer le param ? => déjà check dans le typage. On parle du parametre de la class, mais il ne nous sert plus. Seuls les paramètres de l'instance doivent être pris en compte.
+
+   * Ne pas checker ce type là? => On est pas sensés générer un type avec l'instance ? Non je ne crois pas
+
+
+
+
+*)
+
                 try
                   List.combine ts i
-                with _ -> raise (InvalidRecordInstantiation pos)
+                with _ ->
+                  Format.printf "HERE for %s we have : @\n" (namen n);
+                  Format.printf "<%s>@\n"
+                    (String.concat ", " (List.map Debug.string_of_type i));
+                  Format.printf "we need :@\n";
+                  Format.printf "<%s>@\n"
+                    (String.concat ", " (List.map namet ts));
+                  raise (InvalidRecordInstantiation pos)
               in
               (s, rty)
             | Some (s, rty) ->

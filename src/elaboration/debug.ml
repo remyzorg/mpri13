@@ -23,9 +23,15 @@ open ElaborationEnvironment
 
 let rec string_of_type t =
   match t with
-  | TyVar (_, TName tname) -> Format.sprintf "Tyvar %s" tname
+  | TyVar (_, TName tname) -> Format.sprintf "%s" tname
+  | TyApp (_, TName tname, ts) when tname = "->" || tname = "*"->
+    "(" ^ (String.concat (" " ^ tname ^ " ") (List.map (string_of_type) ts)) ^ ")"
   | TyApp (_, TName tname, ts) ->
-      Format.sprintf "TyApp %s (%s)" tname (String.concat ", " (List.map (string_of_type) ts))
+      let params = begin match ts with
+        [] -> "" | [p] -> (string_of_type p) ^ " "
+      | l -> "(" ^ (String.concat ", " (List.map (string_of_type) ts)) ^ ") "
+      end in 
+      Format.sprintf "%s%s" params tname 
 
 and print_instance_definition i =
   Format.printf "Inst : %s " (let TName s = i.instance_class_name in s);
@@ -60,13 +66,13 @@ let str_sep sep f l =
   (String.concat sep (List.map f l))
     
 let print_datatype_def fmt = function
-    | DAlgebraic _ -> fprintf fmt "ADT"
-    | DRecordType (tnames, members) ->
-        fprintf fmt "(%s) {\n%s\n}\n"
-          (String.concat ", " (List.map (fun (TName name) -> name) tnames))
-          (String.concat ";\n" (List.map (fun (_, LName name, ty) ->
-            sprintf "%s: %s" name (string_of_type ty)
-           ) members))
+| DAlgebraic _ -> fprintf fmt "ADT"
+| DRecordType (tnames, members) ->
+    fprintf fmt "(%s) {\n%s\n}\n"
+      (String.concat ", " (List.map (fun (TName name) -> name) tnames))
+      (String.concat ";\n" (List.map (fun (_, LName name, ty) ->
+        sprintf "%s: %s" name (string_of_type ty)
+       ) members))
           
   
 let print_typedef fmt = function

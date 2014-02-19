@@ -14,12 +14,25 @@ let rec program p = handle_error List.(fun () ->
     flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
   )
 
+and tn_of_class tname = TName ((namet tname) ^ "Class")
+  
+and value_of_member c (pos, (LName name as lname), ty) =
+  let param = Name ((namet c.class_name) ^ "Inst") in
+  let ty_with_param = TyApp (
+    pos, tn_of_class c.class_name, [TyVar (pos, c.class_parameter)]) in
+  ValueDef (
+    pos, [c.class_parameter], [],
+    (Name name, TyApp (pos, TName "->", [ty_with_param; ty])),
+    (EForall (pos, [c.class_parameter],
+    ELambda (
+      pos, (param, ty_with_param),
+      ERecordAccess (pos, EVar (pos, param, [(* EqX *)]), lname)))))
 
-and value_of_member c (pos, (LName name), ty) =
-  let param = LName ((namet c.class_name) ^ (namet c.class_parameter)) in
-    ValueDef (pos, [c.class_parameter], [], (Name name, ty),
-              (ERecordAccess (pos, EVar (pos, Name name, []), param)))
+and record_of_class c =
+  let dty = DRecordType ([c.class_parameter], c.class_members) in
+  TypeDef (c.class_position, kind_of_arity 1, tn_of_class c.class_name, dty)
 
+      
 and value_binding_of_members pos c = 
   let mem_values = List.map (value_of_member c) c.class_members in
   (BindValue (pos, mem_values))
@@ -32,22 +45,32 @@ and check_class_definition env c =
   (* check existence of superclasses *)
   List.iter (fun e -> ignore (lookup_class pos e env)) c.superclasses;
   (* check double in superclass*)
-  if Misc.forall_tail List.mem c.superclasses then raise (AlreadyDefinedAsSuperclass pos);
+  if Misc.forall_tail List.mem c.superclasses
+  then raise (AlreadyDefinedAsSuperclass pos);
   let double_members =
     Misc.forall_tail (fun (_, name1, _) t ->
       List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
   in
   if double_members then raise (AlreadyDefinedMember pos);
-  let env = (List.fold_left (fun acc (pos, (LName name as lname), ty) ->
-    check_wf_scheme env [c.class_parameter] ty;
-    bind_label pos lname [c.class_parameter] ty c.class_name acc
-  ) env c.class_members) |> bind_class c.class_name c
-  in
-  let v, env = value_binding env (value_binding_of_members pos c) in
-  env
-    
+  List.iter (fun (pos, LName name, ty) ->
+    check_wf_scheme env [c.class_parameter] ty) c.class_members;
+  let env = bind_class c.class_name c env in
+  let v = value_binding_of_members pos c in
+  Debug.print_value_bindings Format.std_formatter v;
+  value_binding env v
+
+
+and record_of_instance i =
+  let pos = i.instance_position in
+  let tname = tn_of_class i.instance_class_name in
+  let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
+  let ty_inst = TyApp (pos, i.instance_index, params) in
+  let ty = TyApp (pos, tname, [ty_inst]) in
+  let name = Name ((namet i.instance_class_name) ^ (namet i.instance_index)) in 
+  ValueDef (
+    pos, [], [], (name, ty),
+    ERecordCon (pos, Name (namet tname), [], i.instance_members))
   
-      
 
 
 and check_instance_definitions env is =
@@ -95,23 +118,31 @@ and check_instance_definitions env is =
 
   let env = List.fold_left bind_instance env is in
   List.iter (instance_definition env) is; Format.printf "@\n";
-  env
+  match is with [] -> assert false | i::_ -> 
+  let bvs = BindValue
+    (i.instance_position, List.map (fun i -> record_of_instance i) is)
+  in
+  Format.printf "%a" Debug.print_value_bindings bvs;
+  value_binding env bvs
     
 
 and block env = function
   | BTypeDefinitions ts ->
     let env = type_definitions env ts in
+    Debug.print_typedefs Format.std_formatter ts;
     ([BTypeDefinitions ts], env)
-  | BDefinition d ->
-      Debug.print_value_bindings Format.std_formatter d;
+  | BDefinition d -> Debug.print_value_bindings Format.std_formatter d;
     let d, env = value_binding env d in
     ([BDefinition d], env)
   | BClassDefinition c ->
-    let env = check_class_definition env c in
-    ([BClassDefinition c], env)
+    let record = TypeDefs (c.class_position, [record_of_class c]) in
+      Debug.print_typedefs Format.std_formatter record;
+    let env = type_definitions env record in
+    let v, env = check_class_definition env c in
+    ([BClassDefinition c; BTypeDefinitions record; BDefinition v], env)
   | BInstanceDefinitions is ->
-    let env = check_instance_definitions env is in
-    ([BInstanceDefinitions is], env)
+    let v, env = check_instance_definitions env is in
+    ([BInstanceDefinitions is; BDefinition v], env)
 
 and type_definitions env (TypeDefs (_, tdefs)) =
   let env = List.fold_left env_of_type_definition env tdefs in
@@ -163,8 +194,7 @@ and check_type_constructor_application pos env k tys =
   | ty :: tys, KArrow (k, ks) ->
     check_wf_type env k ty;
     check_type_constructor_application pos env ks tys
-  | _ ->
-    raise (IllKindedType pos)
+  | _ -> raise (IllKindedType pos)
 
 and check_equivalent_kind pos k1 k2 =
   match k1, k2 with
@@ -290,6 +320,8 @@ and expression env = function
     assert false
 
   | ERecordCon (pos, n, i, rbs) ->
+      Format.printf "HERE : ";
+      Format.printf "<%s>@\n" (String.concat ", " (List.map Debug.string_of_type i));
     let rbstys = List.map (record_binding env) rbs in
     let rec check others rty = function
       | [] ->

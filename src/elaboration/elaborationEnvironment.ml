@@ -10,9 +10,14 @@ type t = {
   classes      : (tname * class_definition) list;
   labels       : (lname * (tnames * Types.t * tname)) list;
   instances    : ((tname * tname) * instance_definition) list;
+  class_types    : (tname * tname) list;
 }
 
-let empty = { values = []; types = []; classes = []; labels = []; instances = [] }
+let empty = { values = []; types = []; classes = []; labels = [];
+              instances = [];
+              class_types = [];
+
+            }
 
 let values env = env.values
 
@@ -41,6 +46,16 @@ let lookup_type_kind pos t env =
 
 let lookup_type_definition pos t env =
   snd (lookup_type pos t env)
+
+
+let lookup_class_type env tn = List.assoc tn env.class_types
+
+let bind_class_type env tn c =
+  try
+    ignore(List.assoc tn env.class_types);
+    raise (AlreadyDefinedClass (c.class_position, c.class_name))
+  with Not_found ->
+    { env with class_types = (tn, c.class_name) :: env.class_types }
 
 let lookup_class pos k env =
   try

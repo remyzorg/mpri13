@@ -43,6 +43,10 @@ val bind_type : tname -> Types.kind -> type_definition -> t -> t
 val bind_type_variable : tname -> t -> t
 
 
+
+val bind_class_type : t -> tname -> class_definition -> t
+val lookup_class_type : t -> tname -> tname
+
 val bind_instance : t -> XAST.instance_definition -> t
 val lookup_instance : Positions.position -> Name.tname * Name.tname -> t
   -> XAST.instance_definition

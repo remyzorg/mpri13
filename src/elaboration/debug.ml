@@ -21,6 +21,8 @@ open ElaborationErrors
 open ElaborationExceptions
 open ElaborationEnvironment
 
+
+
 let rec string_of_type t =
   match t with
   | TyVar (_, TName tname) -> Format.sprintf "%s" tname

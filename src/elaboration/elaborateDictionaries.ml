@@ -56,6 +56,7 @@ and check_class_definition env c =
   let env = bind_class c.class_name c env in
   let v = value_binding_of_members pos c in
   Debug.print_value_bindings Format.std_formatter v;
+  let env = bind_class_type env (tn_of_class c.class_name) c in
   value_binding env v
 
 
@@ -65,15 +66,10 @@ and record_of_instance env i =
   let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
   let ty_inst = TyApp (pos, i.instance_index, params) in
   let ty = TyApp (pos, tname, [ty_inst]) in
-  let name = Name ((namet i.instance_class_name) ^ (namet i.instance_index)) in
-  Format.printf " Omg ? : %a" Debug.print_instance_definition i;
-  Format.printf " SOLUTION for %s? => '%s' @\n" (namen name) (
-    String.concat ", " (List.map namet i.instance_parameters));
+  let name = resolve_record i.instance_class_name ty_inst in
   ValueDef (
-    pos, [], [], (name, ty),
-    ERecordCon (pos, name, params, i.instance_members))
-
-(* Prendre l'expression et remplacer le type paramétré par le type voulu *)
+    pos, i.instance_parameters, i.instance_typing_context, (name, ty),
+    ERecordCon (pos, name, [ty_inst], i.instance_members))
 
 
 
@@ -92,6 +88,7 @@ and check_instance_definitions env is =
 
     (* substitute the class parameter by the
        instance index in the class member type *)
+
     let tycm =
       substitute (List.combine ts [TyApp (pos, i.instance_index, params)]) subt
     in check_equal_types pos tyim tycm
@@ -127,8 +124,12 @@ and check_instance_definitions env is =
   let bvs = BindValue
     (i.instance_position, List.map (record_of_instance env) is)
   in
+  Format.printf "==========@\n";
   Format.printf "%a" Debug.print_value_bindings bvs;
+  Format.printf "==========@\n";
+  Format.printf "Trying to type generated code : @\n";
   value_binding env bvs
+
 
 
 and block env = function
@@ -235,8 +236,20 @@ and type_application pos env x tys =
     raise (InvalidTypeApplication pos)
 
 and expression env = function
-  | EVar (pos, ((Name s) as x), tys) ->
-    (EVar (pos, x, tys), type_application pos env x tys)
+  | EVar (pos, ((Name s) as x), tys) as xvar ->
+    let tys' = type_application pos env x tys in
+    begin match destruct_tyarrow tys' with
+    | None -> (EVar (pos, x, tys), tys')
+    | Some (ity, oty) ->
+      begin
+      match class_of_class_type pos env ity with
+      | None -> (EVar (pos, x, tys), tys')
+      | Some (cn, ty) ->
+        let record = resolve_record cn ty in
+        EApp (pos, xvar, EVar (pos, record, tys)), oty
+      end
+    end
+
 
   | ELambda (pos, ((x, aty) as b), e') ->
     check_wf_type env KStar aty;
@@ -251,6 +264,7 @@ and expression env = function
       | None ->
         raise (ApplicationToNonFunctional pos)
       | Some (ity, oty) ->
+
         check_equal_types pos b_ty ity;
         (EApp (pos, a, b), oty)
     end
@@ -339,31 +353,9 @@ and expression env = function
             | None ->
               let rty = TyApp (pos, rtcon, i) in
               let s =
-
-(* PROBLEM : on va chercher dans les label et on tombe sur un equal qui a besoin d'un paramètre : C'est celui de la class Eq. Or dans le Eqint n'a pas de type param :
-
-   Solutions :
-
-   * Choisir le bon environnement local ?
-
-   * Simplement virer le param ? => déjà check dans le typage. On parle du parametre de la class, mais il ne nous sert plus. Seuls les paramètres de l'instance doivent être pris en compte.
-
-   * Ne pas checker ce type là? => On est pas sensés générer un type avec l'instance ? Non je ne crois pas
-
-
-
-
-*)
-
                 try
                   List.combine ts i
                 with _ ->
-                  Format.printf "HERE for %s we have : @\n" (namen n);
-                  Format.printf "<%s>@\n"
-                    (String.concat ", " (List.map Debug.string_of_type i));
-                  Format.printf "we need :@\n";
-                  Format.printf "<%s>@\n"
-                    (String.concat ", " (List.map namet ts));
                   raise (InvalidRecordInstantiation pos)
               in
               (s, rty)
@@ -543,3 +535,19 @@ and is_value_form = function
     is_value_form t
   | _ ->
     false
+
+and name_of_type = function
+  | TyApp (_, (TName n), tys) ->
+    let open Debug in
+    n ^ (String.concat "" (List.map name_of_type tys))
+  | _ -> ""
+
+and resolve_record cn ty = Name ((namet cn) ^ (name_of_type ty))
+
+and class_of_class_type pos env = function
+  | TyApp (_, (TName n as tn), [param]) ->
+    begin try
+      let cn = lookup_class_type env tn in
+      Some (cn, param)
+    with Not_found -> None end
+  | _ -> None

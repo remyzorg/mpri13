@@ -39,7 +39,6 @@ and elaborate_class_members pos c =
 
 
 and check_class_definition env c =
-  (* Debug.print_class_definition c; *)
   let pos = c.class_position in
   (* check existence of superclasses *)
   List.iter (fun e -> ignore (lookup_class pos e env)) c.superclasses;
@@ -55,7 +54,6 @@ and check_class_definition env c =
     check_wf_scheme env [c.class_parameter] ty) c.class_members;
   let env = bind_class c.class_name c env in
   let v = elaborate_class_members pos c in
-  Debug.print_value_bindings Format.std_formatter v;
   let env = bind_class_type env (tn_of_class c.class_name) c in
   value_binding env v
 
@@ -69,12 +67,8 @@ and elaborate_instance env i =
   let name = resolve_record i.instance_class_name ty_inst in
   let expr = ERecordCon (pos, name, [ty_inst], i.instance_members) in
   let expr_with_abs = List.fold_left (fun acc_expr param ->
-    EForall (pos, [param], acc_expr)) expr i.instance_parameters in
-
-      (* Debug.(Format.printf "HERE : \n%s: %s@\n" *)
-      (*          (string_of_expr xvar) (string_of_type tys')); *)
-      (* Debug.(Format.printf "And : %s  <>  %s@\n" (string_of_type ity) *)
-      (*          (string_of_type oty)); *)
+    EForall (pos, [param], acc_expr)) expr i.instance_parameters
+  in
   ValueDef (pos, i.instance_parameters,
             i.instance_typing_context,
             (name, ty), expr_with_abs)
@@ -103,7 +97,6 @@ and check_instance_definitions env is =
   in
 
   let instance_definition env i =
-    (* Debug.print_instance_definition i; *)
     let pos = i.instance_position in
     let c = lookup_class pos i.instance_class_name env in
     let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
@@ -127,15 +120,11 @@ and check_instance_definitions env is =
   in
 
   let env = List.fold_left bind_instance env is in
-  List.iter (instance_definition env) is; Format.printf "@\n";
+  List.iter (instance_definition env) is;
   match is with [] -> assert false | i::_ ->
   let bvs = BindValue
     (i.instance_position, List.map (elaborate_instance env) is)
   in
-  Format.printf "==========@\n";
-  Format.printf "%a" Debug.print_value_bindings bvs;
-  Format.printf "==========@\n";
-  Format.printf "Trying to type generated code : @\n";
   value_binding env bvs
 
 
@@ -143,14 +132,12 @@ and check_instance_definitions env is =
 and block env = function
   | BTypeDefinitions ts ->
     let env = type_definitions env ts in
-    Debug.print_typedefs Format.std_formatter ts;
     ([BTypeDefinitions ts], env)
-  | BDefinition d -> Debug.print_value_bindings Format.std_formatter d;
+  | BDefinition d ->
     let d, env = value_binding env d in
     ([BDefinition d], env)
   | BClassDefinition c ->
     let elaborated_class = TypeDefs (c.class_position, [elaborate_class c]) in
-    Debug.print_typedefs Format.std_formatter elaborated_class;
     let env = type_definitions env elaborated_class in
     let elaborated_members, env = check_class_definition env c in
     ([BTypeDefinitions elaborated_class; BDefinition elaborated_members] , env)
@@ -546,11 +533,10 @@ and is_value_form = function
 
 and name_of_type = function
   | TyApp (_, (TName n), tys) ->
-    let open Debug in
-    "t_" ^ n ^ "_" ^ (String.concat "" (List.map name_of_type tys))
+    n ^ (String.concat "" (List.map name_of_type tys))
   | _ -> ""
 
-and resolve_record cn ty = Name ((name_of_type ty) ^ "_" ^ (namet cn))
+and resolve_record cn ty = Name ((name_of_type ty) ^ (namet cn))
 
 and class_of_class_type pos env = function
   | TyApp (_, (TName n as tn), [param]) ->

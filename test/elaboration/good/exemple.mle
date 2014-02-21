@@ -12,7 +12,7 @@ let external (lt_int : int -> int -> boolean) = "fun x y -> x < y"
 
 
 type test_record = {
-  a : int;
+  a : int -> int;
   b : int
 }
 

@@ -14,10 +14,10 @@ let rec program p = handle_error List.(fun () ->
     flatten (fst (Misc.list_foldmap block ElaborationEnvironment.initial p))
   )
 
-and tn_of_class tname = TName ((namet tname) ^ "Class")
+and tn_of_class tname = TName ("class_" ^ (namet tname))
 
-and value_of_member c (pos, (LName name as lname), ty) =
-  let param = Name ((namet c.class_name) ^ "Inst") in
+and elaborate_class_member c (pos, (LName name as lname), ty) =
+  let param = Name ("inst_" ^ (namet c.class_name)) in
   let ty_with_param = TyApp (
     pos, tn_of_class c.class_name, [TyVar (pos, c.class_parameter)]) in
   ValueDef (
@@ -28,13 +28,13 @@ and value_of_member c (pos, (LName name as lname), ty) =
       pos, (param, ty_with_param),
       ERecordAccess (pos, EVar (pos, param, [(* EqX *)]), lname)))))
 
-and record_of_class c =
+and elaborate_class c =
   let dty = DRecordType ([c.class_parameter], c.class_members) in
   TypeDef (c.class_position, kind_of_arity 1, tn_of_class c.class_name, dty)
 
 
-and value_binding_of_members pos c =
-  let mem_values = List.map (value_of_member c) c.class_members in
+and elaborate_class_members pos c =
+  let mem_values = List.map (elaborate_class_member c) c.class_members in
   (BindValue (pos, mem_values))
 
 
@@ -54,22 +54,30 @@ and check_class_definition env c =
   List.iter (fun (pos, LName name, ty) ->
     check_wf_scheme env [c.class_parameter] ty) c.class_members;
   let env = bind_class c.class_name c env in
-  let v = value_binding_of_members pos c in
+  let v = elaborate_class_members pos c in
   Debug.print_value_bindings Format.std_formatter v;
   let env = bind_class_type env (tn_of_class c.class_name) c in
   value_binding env v
 
 
-and record_of_instance env i =
+and elaborate_instance env i =
   let pos = i.instance_position in
   let tname = tn_of_class i.instance_class_name in
   let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
   let ty_inst = TyApp (pos, i.instance_index, params) in
   let ty = TyApp (pos, tname, [ty_inst]) in
   let name = resolve_record i.instance_class_name ty_inst in
-  ValueDef (
-    pos, i.instance_parameters, i.instance_typing_context, (name, ty),
-    ERecordCon (pos, name, [ty_inst], i.instance_members))
+  let expr = ERecordCon (pos, name, [ty_inst], i.instance_members) in
+  let expr_with_abs = List.fold_left (fun acc_expr param ->
+    EForall (pos, [param], acc_expr)) expr i.instance_parameters in
+
+      (* Debug.(Format.printf "HERE : \n%s: %s@\n" *)
+      (*          (string_of_expr xvar) (string_of_type tys')); *)
+      (* Debug.(Format.printf "And : %s  <>  %s@\n" (string_of_type ity) *)
+      (*          (string_of_type oty)); *)
+  ValueDef (pos, i.instance_parameters,
+            i.instance_typing_context,
+            (name, ty), expr_with_abs)
 
 
 
@@ -122,7 +130,7 @@ and check_instance_definitions env is =
   List.iter (instance_definition env) is; Format.printf "@\n";
   match is with [] -> assert false | i::_ ->
   let bvs = BindValue
-    (i.instance_position, List.map (record_of_instance env) is)
+    (i.instance_position, List.map (elaborate_instance env) is)
   in
   Format.printf "==========@\n";
   Format.printf "%a" Debug.print_value_bindings bvs;
@@ -141,14 +149,14 @@ and block env = function
     let d, env = value_binding env d in
     ([BDefinition d], env)
   | BClassDefinition c ->
-    let record = TypeDefs (c.class_position, [record_of_class c]) in
-      Debug.print_typedefs Format.std_formatter record;
-    let env = type_definitions env record in
-    let v, env = check_class_definition env c in
-    ([BClassDefinition c; BTypeDefinitions record; BDefinition v], env)
+    let elaborated_class = TypeDefs (c.class_position, [elaborate_class c]) in
+    Debug.print_typedefs Format.std_formatter elaborated_class;
+    let env = type_definitions env elaborated_class in
+    let elaborated_members, env = check_class_definition env c in
+    ([BTypeDefinitions elaborated_class; BDefinition elaborated_members] , env)
   | BInstanceDefinitions is ->
-    let v, env = check_instance_definitions env is in
-    ([BInstanceDefinitions is; BDefinition v], env)
+    let elaborated_instances, env = check_instance_definitions env is in
+    ([BDefinition elaborated_instances], env)
 
 and type_definitions env (TypeDefs (_, tdefs)) =
   let env = List.fold_left env_of_type_definition env tdefs in
@@ -539,10 +547,10 @@ and is_value_form = function
 and name_of_type = function
   | TyApp (_, (TName n), tys) ->
     let open Debug in
-    n ^ (String.concat "" (List.map name_of_type tys))
+    "t_" ^ n ^ "_" ^ (String.concat "" (List.map name_of_type tys))
   | _ -> ""
 
-and resolve_record cn ty = Name ((namet cn) ^ (name_of_type ty))
+and resolve_record cn ty = Name ((name_of_type ty) ^ "_" ^ (namet cn))
 
 and class_of_class_type pos env = function
   | TyApp (_, (TName n as tn), [param]) ->

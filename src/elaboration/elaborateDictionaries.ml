@@ -16,118 +16,8 @@ let rec program p = handle_error List.(fun () ->
 
 and tn_of_class tname = TName ("class_" ^ (namet tname))
 
-and elaborate_class_member c (pos, (LName name as lname), ty) =
-  let param = Name ("inst_" ^ (namet c.class_name)) in
-  let ty_with_param = TyApp (
-    pos, tn_of_class c.class_name, [TyVar (pos, c.class_parameter)]) in
-  ValueDef (
-    pos, [c.class_parameter], [],
-    (Name name, TyApp (pos, TName "->", [ty_with_param; ty])),
-    (EForall (pos, [c.class_parameter],
-    ELambda (
-      pos, (param, ty_with_param),
-      ERecordAccess (pos, EVar (pos, param, [(* EqX *)]), lname)))))
-
-and elaborate_class c =
-  let dty = DRecordType ([c.class_parameter], c.class_members) in
-  TypeDef (c.class_position, kind_of_arity 1, tn_of_class c.class_name, dty)
-
-
-and elaborate_class_members pos c =
-  let mem_values = List.map (elaborate_class_member c) c.class_members in
-  (BindValue (pos, mem_values))
-
-
-and check_class_definition env c =
-  let pos = c.class_position in
-  (* check existence of superclasses *)
-  List.iter (fun e -> ignore (lookup_class pos e env)) c.superclasses;
-  (* check double in superclass*)
-  if Misc.forall_tail List.mem c.superclasses
-  then raise (AlreadyDefinedAsSuperclass pos);
-  let double_members =
-    Misc.forall_tail (fun (_, name1, _) t ->
-      List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
-  in
-  if double_members then raise (AlreadyDefinedMember pos);
-  List.iter (fun (pos, LName name, ty) ->
-    check_wf_scheme env [c.class_parameter] ty) c.class_members;
-  let env = bind_class c.class_name c env in
-  let v = elaborate_class_members pos c in
-  let env = bind_class_type env (tn_of_class c.class_name) c in
-  value_binding env v
-
-
-and elaborate_instance env i =
-  let pos = i.instance_position in
-  let tname = tn_of_class i.instance_class_name in
-  let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
-  let ty_inst = TyApp (pos, i.instance_index, params) in
-  let ty = TyApp (pos, tname, [ty_inst]) in
-  let name = resolve_record i.instance_class_name ty_inst in
-  let expr = ERecordCon (pos, name, [ty_inst], i.instance_members) in
-  let expr_with_abs = List.fold_left (fun acc_expr param ->
-    EForall (pos, [param], acc_expr)) expr i.instance_parameters
-  in
-  ValueDef (pos, i.instance_parameters,
-            i.instance_typing_context,
-            (name, ty), expr_with_abs)
-
-
-
-
-
-and check_instance_definitions env is =
-  let check_name_cm lname (_, LName lname, _) = lname = lname in
-  let instance_member pos env c
-      i params (RecordBinding (LName imname as lname, expr)) =
-    let pos = i.instance_position in
-
-    (* add instance parameters to the environnement *)
-    let local_env = introduce_type_parameters env i.instance_parameters in
-    let _, tyim = expression local_env expr in
-    let (ts, subt, _) = lookup_label pos lname local_env in
-
-    (* substitute the class parameter by the
-       instance index in the class member type *)
-
-    let tycm =
-      substitute (List.combine ts [TyApp (pos, i.instance_index, params)]) subt
-    in check_equal_types pos tyim tycm
-  in
-
-  let instance_definition env i =
-    let pos = i.instance_position in
-    let c = lookup_class pos i.instance_class_name env in
-    let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
-    if i.instance_index = TName "->" then raise (IllKindedType pos);
-
-    (* check if members are properly implemented*)
-    List.iter (fun (_, namei, _) ->
-      List.iter (fun (RecordBinding (namem, _)) ->
-        if namei <> namem then raise (MemberNotImplemented (pos, namei))
-      ) i.instance_members
-    ) c.class_members;
-
-    let env = List.fold_left (fun acc (RecordBinding (LName s, _)) ->
-      try bind_scheme (Name s) [c.class_parameter]  (
-        let _, _, t = List.find (check_name_cm s) c.class_members in t)
-            acc
-      with Not_found -> raise (UnboundMember (pos, c.class_name, LName s))
-    ) env i.instance_members in
-
-    List.iter (instance_member pos env c i params) i.instance_members
-  in
-
-  let env = List.fold_left bind_instance env is in
-  List.iter (instance_definition env) is;
-  match is with [] -> assert false | i::_ ->
-  let bvs = BindValue
-    (i.instance_position, List.map (elaborate_instance env) is)
-  in
-  value_binding env bvs
-
-
+and n_of_inst tname = Name ("inst_" ^ (namet tname))
+  
 
 and block env = function
   | BTypeDefinitions ts ->
@@ -241,7 +131,18 @@ and expression env = function
       | None -> (EVar (pos, x, tys), tys')
       | Some (cn, ty) ->
         let record = resolve_record cn ty in
-        EApp (pos, xvar, EVar (pos, record, tys)), oty
+        let right = EVar (pos, record, tys) in
+        let right_with_preds =
+          (try
+             let i = lookup_instance pos (cn, TName (name_of_type ty)) env in
+             List.fold_left (fun acc_expr (ClassPredicate (cl, tn)) ->
+               let v = EVar (pos, n_of_inst cl,
+                             [TyVar (pos, tn)]) in
+               EApp (pos, acc_expr, v)
+             ) right i.instance_typing_context
+           with UnboundInstance _ -> right) in
+        let app = EApp (pos, xvar, right_with_preds) in
+        app, oty
       end
     end
 
@@ -259,7 +160,6 @@ and expression env = function
       | None ->
         raise (ApplicationToNonFunctional pos)
       | Some (ity, oty) ->
-
         check_equal_types pos b_ty ity;
         (EApp (pos, a, b), oty)
     end
@@ -493,22 +393,31 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   let env = introduce_type_parameters env ts in
   check_wf_scheme env ts xty;
 
-  if is_value_form e then begin
-    let e = eforall pos ts e in
-    let e, ty = expression env e in
-    let b = (x, ty) in
-    check_equal_types pos xty ty;
-    (ValueDef (pos, ts, [], b, EForall (pos, ts, e)),
-     bind_scheme x ts ty env)
+  let e = eforall pos ts e in
+  let e, ty = expression env e in
+  check_equal_types pos xty ty;
+
+  let e_with_pred = List.fold_left (
+    fun acc_expr (ClassPredicate (cl, tparam)) ->
+      let inst_type = TyApp (
+        pos, tn_of_class cl, [TyVar (pos, tparam)]) in
+      ELambda (pos, (n_of_inst cl, inst_type), acc_expr)
+  ) e ps
+  in
+  let ty_with_preds = List.fold_left (
+    fun acc_ty (ClassPredicate (cl, tparam)) ->
+    let cltype = TyApp (pos, TName ("class_" ^ (namet cl)),
+                        [TyVar (pos, tparam)]) in
+    TyApp (pos, TName "->", [cltype; acc_ty])
+  ) ty ps in
+  let b = x, ty_with_preds in
+  if is_value_form e_with_pred then begin
+    (ValueDef (pos, ts, [], b, EForall (pos, ts, e_with_pred)),
+     bind_scheme x ts ty_with_preds env)
   end else begin
-    if ts <> [] then
-      raise (ValueRestriction pos)
-    else
-      let e = eforall pos [] e in
-      let e, ty = expression env e in
-      let b = (x, ty) in
-      check_equal_types pos xty ty;
-      (ValueDef (pos, [], [], b, e), bind_simple x ty env)
+    if ts <> [] then raise (ValueRestriction pos)
+    else (ValueDef (pos, [], [], b, e_with_pred),
+          bind_simple x ty_with_preds env)
   end
 
 and value_declaration env (ValueDef (pos, ts, ps, (x, ty), e)) =
@@ -536,7 +445,10 @@ and name_of_type = function
     n ^ (String.concat "" (List.map name_of_type tys))
   | _ -> ""
 
-and resolve_record cn ty = Name ((name_of_type ty) ^ (namet cn))
+and resolve_record cn ty =
+  let nt = name_of_type ty in
+  let s = if nt = "" then "inst_" else nt in
+  Name (s ^ (namet cn))
 
 and class_of_class_type pos env = function
   | TyApp (_, (TName n as tn), [param]) ->
@@ -545,3 +457,129 @@ and class_of_class_type pos env = function
       Some (cn, param)
     with Not_found -> None end
   | _ -> None
+
+and elaborate_class_member c (pos, (LName name as lname), ty) =
+  let param = n_of_inst c.class_name in
+  let ty_with_param = TyApp (
+    pos, tn_of_class c.class_name, [TyVar (pos, c.class_parameter)]) in
+  ValueDef (
+    pos, [c.class_parameter], [],
+    (Name name, TyApp (pos, TName "->", [ty_with_param; ty])),
+    (EForall (pos, [c.class_parameter],
+    ELambda (
+      pos, (param, ty_with_param),
+      ERecordAccess (pos, EVar (pos, param, [(* EqX *)]), lname)))))
+
+
+and superclass_field_name c (TName name) = 
+    LName ("super_" ^ (namet c.class_name) ^ "_" ^ name)
+    
+and elaborate_class c =
+    (* class_members   : (position * lname * mltype) list; *)
+  let pos = c.class_position in
+  let superclasses = List.map (fun super ->
+    let field = superclass_field_name c super in
+    let ty = TyApp (pos, tn_of_class super, [TyVar (pos, c.class_parameter)]) in
+    (pos, field, ty)
+  ) c.superclasses in
+  
+  let dty = DRecordType ([c.class_parameter], c.class_members @ superclasses) in
+  TypeDef (c.class_position, kind_of_arity 1, tn_of_class c.class_name, dty)
+
+
+and elaborate_class_members pos c =
+  let mem_values = List.map (elaborate_class_member c) c.class_members in
+  (BindValue (pos, mem_values))
+
+
+and check_class_definition env c =
+  let pos = c.class_position in
+  (* check existence of superclasses *)
+  List.iter (fun e -> ignore (lookup_class pos e env)) c.superclasses;
+  (* check double in superclass*)
+  if Misc.forall_tail List.mem c.superclasses
+  then raise (AlreadyDefinedAsSuperclass pos);
+  let double_members =
+    Misc.forall_tail (fun (_, name1, _) t ->
+      List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
+  in
+  if double_members then raise (AlreadyDefinedMember pos);
+  List.iter (fun (pos, LName name, ty) ->
+    check_wf_scheme env [c.class_parameter] ty) c.class_members;
+  let env = bind_class c.class_name c env in
+  let v = elaborate_class_members pos c in
+  let env = bind_class_type env (tn_of_class c.class_name) c in
+  value_binding env v
+
+
+and elaborate_instance env i =
+  let pos = i.instance_position in
+  let tname = tn_of_class i.instance_class_name in
+  let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
+  let ty_inst = TyApp (pos, i.instance_index, params) in
+  let ty =(TyApp (pos, tname, [ty_inst])) in
+  let name = resolve_record i.instance_class_name ty_inst in
+
+  
+  let expr = ERecordCon (pos, name, [ty_inst], i.instance_members) in
+  let expr_with_abs = List.fold_left (fun acc_expr param ->
+    EForall (pos, [param], acc_expr)) expr i.instance_parameters
+  in
+  ValueDef (pos, i.instance_parameters,
+            i.instance_typing_context,
+            (name, ty), expr_with_abs)
+
+
+
+
+
+and check_instance_definitions env is =
+  let check_name_cm lname (_, LName lname, _) = lname = lname in
+  let instance_member pos env c
+      i params (RecordBinding (LName imname as lname, expr)) =
+    let pos = i.instance_position in
+
+    (* add instance parameters to the environnement *)
+    let local_env = introduce_type_parameters env i.instance_parameters in
+    let _, tyim = expression local_env expr in
+    let (ts, subt, _) = lookup_label pos lname local_env in
+
+    (* substitute the class parameter by the
+       instance index in the class member type *)
+
+    let tycm =
+      substitute (List.combine ts [TyApp (pos, i.instance_index, params)]) subt
+    in check_equal_types pos tyim tycm
+  in
+
+  let instance_definition env i =
+    let pos = i.instance_position in
+    let c = lookup_class pos i.instance_class_name env in
+    let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
+    if i.instance_index = TName "->" then raise (IllKindedType pos);
+
+    (* check if members are properly implemented*)
+    List.iter (fun (_, namei, _) ->
+      List.iter (fun (RecordBinding (namem, _)) ->
+        if namei <> namem then raise (MemberNotImplemented (pos, namei))
+      ) i.instance_members
+    ) c.class_members;
+
+    let env = List.fold_left (fun acc (RecordBinding (LName s, _)) ->
+      try bind_scheme (Name s) [c.class_parameter]  (
+        let _, _, t = List.find (check_name_cm s) c.class_members in t)
+            acc
+      with Not_found -> raise (UnboundMember (pos, c.class_name, LName s))
+    ) env i.instance_members in
+
+    List.iter (instance_member pos env c i params) i.instance_members
+  in
+
+  let env = List.fold_left bind_instance env is in
+  List.iter (instance_definition env) is;
+  match is with [] -> assert false | i::_ ->
+  let bvs = BindRecValue
+    (i.instance_position, List.map (elaborate_instance env) is)
+  in
+  value_binding env bvs
+

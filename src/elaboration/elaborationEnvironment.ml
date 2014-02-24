@@ -62,7 +62,6 @@ let lookup_class pos k env =
     List.assoc k env.classes
   with Not_found -> raise (UnboundClass (pos, k))
 
-
 let lookup_instance pos (cname, index) env =
   try List.assoc (cname, index) env.instances
   with Not_found -> raise (UnboundInstance (pos, (cname, index)))

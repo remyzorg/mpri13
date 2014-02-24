@@ -120,7 +120,28 @@ and type_application pos env x tys =
   with _ ->
     raise (InvalidTypeApplication pos)
 
-and expression env = function
+
+
+(* and path env acc cn predicates = *)
+(*   if is_predicate cn predicates then acc *)
+(*   else *)
+
+(* and build_ancestor_access env predicates cn pos record tys ty = *)
+(*   let rec step predicates expr (TName name as cn) = *)
+(*     if is_predicate cn then EVar (pos, resolve_record cn ty, tys) *)
+(*     else *)
+(*     let next_predicates = *)
+(*       List.fold_left () [] predicates  *)
+(*       children env cn in *)
+(*     ERecordAccess (pos, step ,  *)
+
+(*   in step (EVar (pos, record, tys)) *)
+  
+
+and is_predicate cn predicates =
+  List.exists (function ClassPredicate (cl, _) -> cl = cn) predicates
+      
+and expression predicates env = function
   | EVar (pos, ((Name s) as x), tys) as xvar ->
     let tys' = type_application pos env x tys in
     begin match destruct_tyarrow tys' with
@@ -130,19 +151,46 @@ and expression env = function
       match class_of_class_type pos env ity with
       | None -> (EVar (pos, x, tys), tys')
       | Some (cn, ty) ->
-        let record = resolve_record cn ty in
-        let right = EVar (pos, record, tys) in
-        let right_with_preds =
-          (try
-             let i = lookup_instance pos (cn, TName (name_of_type ty)) env in
-             List.fold_left (fun acc_expr (ClassPredicate (cl, tn)) ->
-               let v = EVar (pos, n_of_inst cl,
-                             [TyVar (pos, tn)]) in
-               EApp (pos, acc_expr, v)
-             ) right i.instance_typing_context
-           with UnboundInstance _ -> right) in
-        let app = EApp (pos, xvar, right_with_preds) in
-        app, oty
+
+
+          (* Format.( *)
+          (* if (List.exists (function ClassPredicate (cl, param) -> cl = cn) *)
+          (*       predicates) then *)
+          (* printf "IN %s  : \n%s is in predicates@\n" *)
+          (*   (\* (Debug.string_of_expr xvar) *\) *)
+          (*   (Positions.string_of_pos pos) *)
+          (*   (namet cn) *)
+          (* else printf "IN %s  : \n%s is not in predicates@\n" *)
+          (*   (Positions.string_of_pos pos) *)
+          (*   (namet cn); *)
+          (* List.iter (function ClassPredicate (cl, param) -> *)
+          (*   printf "%s " (namet cl)) predicates; *)
+          (* printf "@\n" *)
+          (* ); *)
+
+          let record = resolve_record cn ty in
+
+          (* let right = *)
+          (*   List.iter () (EVar (pos, record, tys)) *)
+
+          (*   resolve_record cn ty in *)
+
+          (* in  *)
+
+
+          let right = EVar (pos, record, tys) in
+          
+          let right_with_preds =
+            (try
+               let i = lookup_instance pos (cn, TName (name_of_type ty)) env in
+               List.fold_left (fun acc_expr (ClassPredicate (cl, tn)) ->
+                 let v = EVar (pos, n_of_inst cl,
+                               [TyVar (pos, tn)]) in
+                 EApp (pos, acc_expr, v)
+               ) right i.instance_typing_context
+             with UnboundInstance _ -> right) in
+          let app = EApp (pos, xvar, right_with_preds) in
+          app, oty
       end
     end
 
@@ -150,12 +198,12 @@ and expression env = function
   | ELambda (pos, ((x, aty) as b), e') ->
     check_wf_type env KStar aty;
     let env = bind_simple x aty env in
-    let (e, ty) = expression env e' in
+    let (e, ty) = expression predicates env e' in
     (ELambda (pos, b, e), ntyarrow pos [aty] ty)
 
   | EApp (pos, a, b) ->
-    let a, a_ty = expression env a in
-    let b, b_ty = expression env b in
+    let a, a_ty = expression predicates env a in
+    let b, b_ty = expression predicates env b in
     begin match destruct_tyarrow a_ty with
       | None ->
         raise (ApplicationToNonFunctional pos)
@@ -166,7 +214,7 @@ and expression env = function
 
   | EBinding (pos, vb, e) ->
     let vb, env = value_binding env vb in
-    let e, ty = expression env e in
+    let e, ty = expression predicates env e in
     (EBinding (pos, vb, e), ty)
 
   | EForall (pos, tvs, e) ->
@@ -174,14 +222,14 @@ and expression env = function
     raise (OnlyLetsCanIntroduceTypeAbstraction pos)
 
   | ETypeConstraint (pos, e, xty) ->
-    let e, ty = expression env e in
+    let e, ty = expression predicates env e in
     check_equal_types pos ty xty;
     (e, ty)
 
   | EExists (_, _, e) ->
     (** Because we are explicitly typed, flexible type variables
         are useless. *)
-    expression env e
+    expression predicates env e
 
   | EDCon (pos, DName x, tys, es) ->
     let ty = type_application pos env (Name x) tys in
@@ -191,7 +239,7 @@ and expression env = function
     else
       let es =
         List.map2 (fun e xty ->
-          let (e, ty) = expression env e in
+          let (e, ty) = expression predicates env e in
           check_equal_types pos ty xty;
           e
         ) es itys
@@ -199,8 +247,8 @@ and expression env = function
       (EDCon (pos, DName x, tys, es), oty)
 
   | EMatch (pos, s, bs) ->
-    let (s, sty) = expression env s in
-    let bstys = List.map (branch env sty) bs in
+    let (s, sty) = expression predicates env s in
+    let bstys = List.map (branch predicates env sty) bs in
     let bs = fst (List.split bstys) in
     let tys = snd (List.split bstys) in
     let ty = List.hd tys in
@@ -208,7 +256,7 @@ and expression env = function
     (EMatch (pos, s, bs), ty)
 
   | ERecordAccess (pos, e, l) ->
-    let e, ty = expression env e in
+    let e, ty = expression predicates env e in
     let (ts, lty, rtcon) = lookup_label pos l env in
     let ty =
       match ty with
@@ -234,7 +282,7 @@ and expression env = function
     assert false
 
   | ERecordCon (pos, n, i, rbs) ->
-    let rbstys = List.map (record_binding env) rbs in
+    let rbstys = List.map (record_binding predicates env) rbs in
     let rec check others rty = function
       | [] ->
         List.rev others, rty
@@ -280,10 +328,10 @@ and primitive pos = function
   | PCharConstant _ ->
     TyApp (pos, TName "char", [])
 
-and branch env sty (Branch (pos, p, e)) =
+and branch predicates env sty (Branch (pos, p, e)) =
   let denv = pattern env sty p in
   let env = concat pos env denv in
-  let (e, ty) = expression env e in
+  let (e, ty) = expression predicates env e in
   (Branch (pos, p, e), ty)
 
 and concat pos env1 env2 =
@@ -353,8 +401,8 @@ and pattern env xty = function
     List.(iter (check_same_denv pos denv) (tl denvs));
     denv
 
-and record_binding env (RecordBinding (l, e)) =
-  let e, ty = expression env e in
+and record_binding predicates env (RecordBinding (l, e)) =
+  let e, ty = expression predicates env e in
   (RecordBinding (l, e), ty)
 
 and value_binding env = function
@@ -394,7 +442,7 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   check_wf_scheme env ts xty;
 
   let e = eforall pos ts e in
-  let e, ty = expression env e in
+  let e, ty = expression ps env e in
   check_equal_types pos xty ty;
 
   let e_with_pred = List.fold_left (
@@ -519,18 +567,19 @@ and elaborate_instance env i =
   let ty_inst = TyApp (pos, i.instance_index, params) in
   let ty =(TyApp (pos, tname, [ty_inst])) in
   let name = resolve_record i.instance_class_name ty_inst in
-
-  
-  let expr = ERecordCon (pos, name, [ty_inst], i.instance_members) in
+  let c = lookup_class pos i.instance_class_name env in
+  let fields = List.fold_left (fun fields super ->
+    let lname = superclass_field_name c super in
+    let expr = EVar (pos, resolve_record super ty_inst, params) in
+    RecordBinding (lname, expr) :: fields
+  ) i.instance_members c.superclasses in
+  let expr = ERecordCon (pos, name, [ty_inst], fields) in
   let expr_with_abs = List.fold_left (fun acc_expr param ->
     EForall (pos, [param], acc_expr)) expr i.instance_parameters
   in
   ValueDef (pos, i.instance_parameters,
             i.instance_typing_context,
             (name, ty), expr_with_abs)
-
-
-
 
 
 and check_instance_definitions env is =
@@ -541,7 +590,7 @@ and check_instance_definitions env is =
 
     (* add instance parameters to the environnement *)
     let local_env = introduce_type_parameters env i.instance_parameters in
-    let _, tyim = expression local_env expr in
+    let _, tyim = expression [] local_env expr in
     let (ts, subt, _) = lookup_label pos lname local_env in
 
     (* substitute the class parameter by the

@@ -23,3 +23,4 @@ test/elaboration/bad/*.ml
 test/elaboration/bad/*.mlr
 
 src/parsing/pprint-20130324/src/_build/*
+*.ko

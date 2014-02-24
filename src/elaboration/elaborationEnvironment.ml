@@ -57,6 +57,9 @@ let bind_class_type env tn c =
   with Not_found ->
     { env with class_types = (tn, c.class_name) :: env.class_types }
 
+
+let fold_classes f acc env = List.fold_left f acc env.classes
+      
 let lookup_class pos k env =
   try
     List.assoc k env.classes

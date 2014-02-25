@@ -120,23 +120,6 @@ and type_application pos env x tys =
   with _ ->
     raise (InvalidTypeApplication pos)
 
-
-
-(* and path env acc cn predicates = *)
-(*   if is_predicate cn predicates then acc *)
-(*   else *)
-
-(* and build_ancestor_access env predicates cn pos record tys ty = *)
-(*   let rec step predicates expr (TName name as cn) = *)
-(*     if is_predicate cn then EVar (pos, resolve_record cn ty, tys) *)
-(*     else *)
-(*     let next_predicates = *)
-(*       List.fold_left () [] predicates  *)
-(*       children env cn in *)
-(*     ERecordAccess (pos, step ,  *)
-
-(*   in step (EVar (pos, record, tys)) *)
-
 and build_ancestors_path pos env b predicates = 
   let rec search predicates path = 
     if List.mem b predicates then Some (b :: path)
@@ -160,7 +143,7 @@ and build_ancestors_access pos path ty tys =
     match path with
     | [] -> assert false
     | [cn] ->
-        let record = resolve_record cn ty in
+        let record = record_name cn ty in
         EVar (pos, record, tys)
     | tname :: (b :: _ as tail) ->
         let lbl = superclass_field_name b tname in
@@ -171,40 +154,22 @@ and build_ancestors_access pos path ty tys =
 and is_predicate cn predicates =
   List.exists (function ClassPredicate (cl, _) -> cl = cn) predicates
       
+    
 and expression predicates env = function
   | EVar (pos, ((Name s) as x), tys) as xvar ->
+
     let tys' = type_application pos env x tys in
+
     begin match destruct_tyarrow tys' with
     | None -> (EVar (pos, x, tys), tys')
     | Some (ity, oty) ->
       begin
-      match class_of_class_type pos env ity with
+      match class_of_ident_type pos env ity with
       | None -> (EVar (pos, x, tys), tys')
       | Some (cn, ty) ->
 
-          (* Format.( *)
-          (* if (List.exists (function ClassPredicate (cl, param) -> cl = cn) *)
-          (*       predicates) then *)
-          (* printf "IN %s  : \n%s is in predicates@\n" *)
-          (*   (\* (Debug.string_of_expr xvar) *\) *)
-          (*   (Positions.string_of_pos pos) *)
-          (*   (namet cn) *)
-          (* else printf "IN %s  : \n%s is not in predicates@\n" *)
-          (*   (Positions.string_of_pos pos) *)
-          (*   (namet cn); *)
-          (* List.iter (function ClassPredicate (cl, param) -> *)
-          (*   printf "%s " (namet cl)) predicates; *)
-          (* printf "@\n" *)
-          (* ); *)
-
           let pl = List.map (fun (ClassPredicate (cl, _)) -> cl) predicates in
           let path = build_ancestors_path pos env cn pl in
-
-          (* Format.printf "PATH : [%s]@\n" *)
-          (*   (String.concat ", " (List.map namet path)); *)
-          
-          (* let record = resolve_record cn ty in *)
-          (* let right = EVar (pos, record, tys) in *)
           let right = build_ancestors_access pos path ty tys in
 
           let right_with_preds =
@@ -487,7 +452,6 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   ) ty ps in
   let b = x, ty_with_preds in
 
-
   if is_value_form e_with_pred then begin
     (ValueDef (pos, ts, [], b, EForall (pos, ts, e_with_pred)),
      bind_scheme x ts ty_with_preds env)
@@ -498,7 +462,12 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   end
 
 and value_declaration env (ValueDef (pos, ts, ps, (x, ty), e)) =
-  bind_scheme x ts ty env
+
+  let ps_tys = List.map (fun (ClassPredicate (cl, tparam)) ->
+    TyApp (pos, TName ("class_" ^ (namet cl)), [TyVar (pos, tparam)])
+  ) ps in
+  let extended_ty = ntyarrow pos ps_tys ty in
+  bind_scheme x ts extended_ty env
 
 
 and is_value_form = function
@@ -522,12 +491,12 @@ and name_of_type = function
     n ^ (String.concat "" (List.map name_of_type tys))
   | _ -> ""
 
-and resolve_record cn ty =
+and record_name cn ty =
   let nt = name_of_type ty in
   let s = if nt = "" then "inst_" else nt in
   Name (s ^ (namet cn))
 
-and class_of_class_type pos env = function
+and class_of_ident_type pos env = function
   | TyApp (_, (TName n as tn), [param]) ->
     begin try
       let cn = lookup_class_type env tn in
@@ -595,11 +564,11 @@ and elaborate_instance env i =
   let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
   let ty_inst = TyApp (pos, i.instance_index, params) in
   let ty =(TyApp (pos, tname, [ty_inst])) in
-  let name = resolve_record i.instance_class_name ty_inst in
+  let name = record_name i.instance_class_name ty_inst in
   let c = lookup_class pos i.instance_class_name env in
   let fields = List.fold_left (fun fields super ->
     let lname = superclass_field_name c.class_name super in
-    let expr = EVar (pos, resolve_record super ty_inst, params) in
+    let expr = EVar (pos, record_name super ty_inst, params) in
     RecordBinding (lname, expr) :: fields
   ) i.instance_members c.superclasses in
   let expr = ERecordCon (pos, name, [ty_inst], fields) in

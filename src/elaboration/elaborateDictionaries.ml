@@ -465,11 +465,11 @@ and eforall pos ts e =
 
 
 and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
-  let env = introduce_type_parameters env ts in
+  let env' = introduce_type_parameters env ts in
   check_wf_scheme env ts xty;
 
   let e = eforall pos ts e in
-  let e, ty = expression ps env e in
+  let e, ty = expression ps env' e in
   check_equal_types pos xty ty;
 
   let e_with_pred = List.fold_left (
@@ -486,6 +486,8 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
     TyApp (pos, TName "->", [cltype; acc_ty])
   ) ty ps in
   let b = x, ty_with_preds in
+
+
   if is_value_form e_with_pred then begin
     (ValueDef (pos, ts, [], b, EForall (pos, ts, e_with_pred)),
      bind_scheme x ts ty_with_preds env)

@@ -136,8 +136,38 @@ and type_application pos env x tys =
 (*     ERecordAccess (pos, step ,  *)
 
 (*   in step (EVar (pos, record, tys)) *)
-  
 
+and build_ancestors_path pos env b predicates = 
+  let rec search predicates path = 
+    if List.mem b predicates then Some (b :: path)
+    else match predicates with
+    | [] -> None
+    | p :: tail ->
+        let sups = (lookup_class pos p env).superclasses in
+        let explo = search sups (p :: path) in
+        begin match explo with
+        | None -> search tail path
+        | Some _ -> explo
+        end
+  in
+  match search predicates [] with
+  | Some p -> p
+  | None -> [b]
+
+
+and build_ancestors_access pos path ty tys =
+  let rec construct path =
+    match path with
+    | [] -> assert false
+    | [cn] ->
+        let record = resolve_record cn ty in
+        EVar (pos, record, tys)
+    | tname :: (b :: _ as tail) ->
+        let lbl = superclass_field_name b tname in
+        ERecordAccess (pos, construct tail, lbl)
+  in
+  construct path
+        
 and is_predicate cn predicates =
   List.exists (function ClassPredicate (cl, _) -> cl = cn) predicates
       
@@ -151,7 +181,6 @@ and expression predicates env = function
       match class_of_class_type pos env ity with
       | None -> (EVar (pos, x, tys), tys')
       | Some (cn, ty) ->
-
 
           (* Format.( *)
           (* if (List.exists (function ClassPredicate (cl, param) -> cl = cn) *)
@@ -168,18 +197,16 @@ and expression predicates env = function
           (* printf "@\n" *)
           (* ); *)
 
-          let record = resolve_record cn ty in
+          let pl = List.map (fun (ClassPredicate (cl, _)) -> cl) predicates in
+          let path = build_ancestors_path pos env cn pl in
 
-          (* let right = *)
-          (*   List.iter () (EVar (pos, record, tys)) *)
-
-          (*   resolve_record cn ty in *)
-
-          (* in  *)
-
-
-          let right = EVar (pos, record, tys) in
+          (* Format.printf "PATH : [%s]@\n" *)
+          (*   (String.concat ", " (List.map namet path)); *)
           
+          (* let record = resolve_record cn ty in *)
+          (* let right = EVar (pos, record, tys) in *)
+          let right = build_ancestors_access pos path ty tys in
+
           let right_with_preds =
             (try
                let i = lookup_instance pos (cn, TName (name_of_type ty)) env in
@@ -519,14 +546,14 @@ and elaborate_class_member c (pos, (LName name as lname), ty) =
       ERecordAccess (pos, EVar (pos, param, [(* EqX *)]), lname)))))
 
 
-and superclass_field_name c (TName name) = 
-    LName ("super_" ^ (namet c.class_name) ^ "_" ^ name)
+and superclass_field_name cl super  = 
+    LName ("super_" ^ (namet cl) ^ "_" ^ (namet super))
     
 and elaborate_class c =
     (* class_members   : (position * lname * mltype) list; *)
   let pos = c.class_position in
   let superclasses = List.map (fun super ->
-    let field = superclass_field_name c super in
+    let field = superclass_field_name c.class_name super in
     let ty = TyApp (pos, tn_of_class super, [TyVar (pos, c.class_parameter)]) in
     (pos, field, ty)
   ) c.superclasses in
@@ -569,7 +596,7 @@ and elaborate_instance env i =
   let name = resolve_record i.instance_class_name ty_inst in
   let c = lookup_class pos i.instance_class_name env in
   let fields = List.fold_left (fun fields super ->
-    let lname = superclass_field_name c super in
+    let lname = superclass_field_name c.class_name super in
     let expr = EVar (pos, resolve_record super ty_inst, params) in
     RecordBinding (lname, expr) :: fields
   ) i.instance_members c.superclasses in

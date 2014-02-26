@@ -163,8 +163,7 @@ and expression predicates env = function
     begin match destruct_tyarrow tys' with
     | None -> (EVar (pos, x, tys), tys')
     | Some (ity, oty) ->
-      begin
-      match class_of_ident_type pos env ity with
+      begin match class_of_ident_type pos env ity with
       | None -> (EVar (pos, x, tys), tys')
       | Some (cn, ty) ->
 
@@ -434,10 +433,28 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   check_wf_scheme env ts xty;
 
   begin match destruct_tyarrow xty with
-  | None -> if ps <> [] then raise (InvalidOverloading pos)
+  | None ->
+      begin match class_of_ident_type pos env xty with
+      | Some _ -> ()
+      | None ->
+          begin try
+                  let _, (var, ty) = lookup pos x env in
+                  begin match destruct_tyarrow ty with
+                  | None -> ()
+                  | Some (ity, _) ->
+                      begin match class_of_ident_type pos env ity with
+                      | None -> ()
+                      | Some _ -> raise (AlreadyDefinedMember pos)
+                      end 
+                  end 
+            with UnboundIdentifier _ -> ()
+          end;
+          if ps <> [] then (
+        raise (InvalidOverloading pos))
+      end
   | _ -> ()
   end;
-
+  
   let e = eforall pos ts e in
   let e, ty = expression ps env' e in
   check_equal_types pos xty ty;
@@ -467,7 +484,6 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   end
 
 and value_declaration env (ValueDef (pos, ts, ps, (x, ty), e)) =
-
   let ps_tys = List.map (fun (ClassPredicate (cl, tparam)) ->
     TyApp (pos, TName ("class_" ^ (namet cl)), [TyVar (pos, tparam)])
   ) ps in
@@ -510,11 +526,6 @@ and class_of_ident_type pos env = function
   | _ -> None
 
 
-(* and is_member_of_typeclass name env = *)
-
-
-  
-      
 and elaborate_class_member c (pos, (LName name as lname), ty) =
   let param = n_of_inst c.class_name in
   let ty_with_param = TyApp (
@@ -539,7 +550,6 @@ and elaborate_class c =
     let ty = TyApp (pos, tn_of_class super, [TyVar (pos, c.class_parameter)]) in
     (pos, field, ty)
   ) c.superclasses in
-  
   let dty = DRecordType ([c.class_parameter], c.class_members @ superclasses) in
   TypeDef (c.class_position, kind_of_arity 1, tn_of_class c.class_name, dty)
 
@@ -556,12 +566,14 @@ and check_class_definition env c =
   (* check double in superclass*)
   if Misc.forall_tail List.mem c.superclasses
   then raise (AlreadyDefinedAsSuperclass pos);
+
+  List.iter (fun (_, name1, _) ->
+  (try ignore (lookup pos (Name (namel name1)) env);
+       raise (AlreadyDefinedMember pos) with
+       | UnboundIdentifier _ -> () )) c.class_members;
+  
   let double_members =
     Misc.forall_tail (fun (_, name1, _) t ->
-      Format.printf "OKOK : %d @." (List.length c.class_members);
-      (try ignore (lookup pos (Name (namel name1)) env);
-           raise (AlreadyDefinedMember pos) with
-      | UnboundIdentifier _ -> () );
       List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
   in
   if double_members then raise (AlreadyDefinedMember pos);
@@ -617,6 +629,7 @@ and check_instance_definitions env is =
   let instance_definition env i =
     let pos = i.instance_position in
     let c = lookup_class pos i.instance_class_name env in
+
     let params = List.map (fun p -> TyVar (pos, p)) i.instance_parameters in
     if i.instance_index = TName "->" then raise (IllKindedType pos);
 
@@ -626,6 +639,15 @@ and check_instance_definitions env is =
         if namei <> namem then raise (MemberNotImplemented (pos, namei))
       ) i.instance_members
     ) c.class_members;
+
+    ignore(Misc.forall_tail (fun (ClassPredicate (cl1, _)) t ->
+      List.for_all (function ClassPredicate (cl2, _) ->
+        if cl1 = cl1 || is_superclass pos cl1 cl2 env
+        || is_superclass pos cl2 cl1 env then 
+        raise (InvalidOverloading pos); true
+      ) t
+
+    ) i.instance_typing_context);
 
     let env = List.fold_left (fun acc (RecordBinding (LName s, _)) ->
       try bind_scheme (Name s) [c.class_parameter]  (

@@ -32,7 +32,6 @@ exception AlreadyDefinedInstance of position * (tname * tname)
 
 
 
-
 (** [UnboundIdentifier] is raised if an identifier is unbound. *)
 exception UnboundIdentifier of position * name
 

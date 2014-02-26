@@ -49,8 +49,6 @@ let handle_error f =
 
 
 
-
-
     | CannotElaborateDictionary (pos, ty) ->
       fatal' pos (Printf.sprintf "  Cannot elaborate a dictionary of type %s."
                    (string_of_type ty))

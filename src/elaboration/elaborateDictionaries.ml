@@ -433,6 +433,11 @@ and value_definition env (ValueDef (pos, ts, ps, (x, xty), e)) =
   let env' = introduce_type_parameters env ts in
   check_wf_scheme env ts xty;
 
+  begin match destruct_tyarrow xty with
+  | None -> if ps <> [] then raise (InvalidOverloading pos)
+  | _ -> ()
+  end;
+
   let e = eforall pos ts e in
   let e, ty = expression ps env' e in
   check_equal_types pos xty ty;
@@ -504,6 +509,12 @@ and class_of_ident_type pos env = function
     with Not_found -> None end
   | _ -> None
 
+
+(* and is_member_of_typeclass name env = *)
+
+
+  
+      
 and elaborate_class_member c (pos, (LName name as lname), ty) =
   let param = n_of_inst c.class_name in
   let ty_with_param = TyApp (
@@ -547,6 +558,8 @@ and check_class_definition env c =
   then raise (AlreadyDefinedAsSuperclass pos);
   let double_members =
     Misc.forall_tail (fun (_, name1, _) t ->
+      (try ignore (lookup pos name1 env); raise (AlreadyDefinedMember pos) with
+      | UnboundIdentifier _ -> () );
       List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
   in
   if double_members then raise (AlreadyDefinedMember pos);

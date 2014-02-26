@@ -47,8 +47,7 @@ module StringSet = Set.Make(String)
 
 let rec forall_tail f = function
   | [] -> false
-  | [_] -> false
-  | h::t -> let b = f h t in if b then b else forall_tail f t
+  | h::t -> f h t || forall_tail f t
 
 
 (** Maps over strings. *)

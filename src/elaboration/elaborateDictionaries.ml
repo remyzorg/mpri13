@@ -558,7 +558,9 @@ and check_class_definition env c =
   then raise (AlreadyDefinedAsSuperclass pos);
   let double_members =
     Misc.forall_tail (fun (_, name1, _) t ->
-      (try ignore (lookup pos name1 env); raise (AlreadyDefinedMember pos) with
+      Format.printf "OKOK : %d @." (List.length c.class_members);
+      (try ignore (lookup pos (Name (namel name1)) env);
+           raise (AlreadyDefinedMember pos) with
       | UnboundIdentifier _ -> () );
       List.for_all (fun (_, name2, _) -> name1 <> name2) t) c.class_members
   in
